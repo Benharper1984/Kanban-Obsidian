@@ -1,0 +1,73 @@
+/* ============================================
+   Kanban 4000 - Responsive Styles
+   Mobile and tablet adaptations
+   ============================================ */
+
+@media (max-width: 768px) {
+	/* Toolbar */
+	.kanban-toolbar {
+		flex-direction: column;
+		align-items: stretch;
+		gap: var(--kanban-spacing-md);
+	}
+	
+	.kanban-search {
+		max-width: none;
+	}
+	
+	.kanban-sort {
+		justify-content: flex-end;
+	}
+
+	.kanban-actions {
+		margin-left: 0;
+		justify-content: flex-start;
+	}
+
+	.kanban-action-btn span {
+		display: none;
+	}
+	
+	/* Lists */
+	.kanban-list {
+		width: calc(100vw - 64px);
+		min-width: 260px;
+		max-width: 320px;
+	}
+	
+	/* Header */
+	.kanban-header {
+		padding: 10px var(--kanban-spacing-lg);
+		gap: var(--kanban-spacing-md);
+	}
+	
+	.kanban-breadcrumbs {
+		font-size: 13px;
+	}
+
+	/* Markdown Editor Modal */
+	.kanban-md-editor-modal {
+		width: 95vw;
+		height: 90vh;
+	}
+
+	/* Embedded View */
+	.kanban-embedded-header {
+		flex-wrap: wrap;
+		gap: var(--kanban-spacing-md);
+	}
+
+	.kanban-embedded-file-info {
+		order: 2;
+		width: 100%;
+	}
+
+	.kanban-embedded-badge {
+		display: none;
+	}
+
+	.kanban-embedded-list {
+		width: calc(100vw - 64px);
+		min-width: 260px;
+	}
+}

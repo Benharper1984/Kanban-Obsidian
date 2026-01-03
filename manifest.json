@@ -1,0 +1,10 @@
+{
+	"id": "kanban-4000",
+	"name": "Kanban 4000",
+	"version": "0.1.0",
+	"minAppVersion": "1.0.0",
+	"description": "A zoomable Trello-like interface that renders your vault folder structure as navigable kanban boards",
+	"author": "Ben Harper",
+	"authorUrl": "",
+	"isDesktopOnly": false
+}

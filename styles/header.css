@@ -1,0 +1,261 @@
+/* ============================================
+   Kanban 4000 - Header & Toolbar Styles
+   Header, breadcrumbs, toolbar, search, sort
+   ============================================ */
+
+/* Header */
+.kanban-header {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-lg);
+	padding: var(--kanban-spacing-lg) var(--kanban-spacing-xl);
+	background-color: var(--background-secondary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+/* Back Button */
+.kanban-back-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--kanban-btn-size-md);
+	height: var(--kanban-btn-size-md);
+	border: none;
+	border-radius: var(--kanban-radius-sm);
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: background-color var(--kanban-transition-fast);
+}
+
+.kanban-back-btn:hover {
+	background-color: var(--background-modifier-active-hover);
+}
+
+/* Breadcrumbs */
+.kanban-breadcrumbs {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--kanban-spacing-xs);
+	font-size: 14px;
+	color: var(--text-muted);
+}
+
+.kanban-breadcrumb {
+	cursor: pointer;
+	padding: var(--kanban-spacing-xs) var(--kanban-spacing-md);
+	border-radius: var(--kanban-radius-xs);
+	transition: background-color var(--kanban-transition-fast);
+}
+
+.kanban-breadcrumb:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.kanban-breadcrumb-current {
+	color: var(--text-normal);
+	font-weight: 600;
+	cursor: default;
+}
+
+.kanban-breadcrumb-current:hover {
+	background-color: transparent;
+}
+
+.kanban-breadcrumb-separator {
+	color: var(--text-faint);
+}
+
+/* Toolbar */
+.kanban-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--kanban-spacing-xl);
+	padding: var(--kanban-spacing-md) var(--kanban-spacing-xl);
+	background-color: var(--background-secondary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+/* Search */
+.kanban-search {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-md);
+	flex: 1;
+	max-width: 300px;
+	padding: 6px 10px;
+	background-color: var(--background-primary);
+	border-radius: var(--kanban-radius-sm);
+	border: 1px solid var(--background-modifier-border);
+}
+
+.kanban-search:focus-within {
+	border-color: var(--interactive-accent);
+}
+
+.kanban-search-icon {
+	display: flex;
+	color: var(--text-muted);
+}
+
+.kanban-search-input {
+	flex: 1;
+	border: none;
+	background: transparent;
+	color: var(--text-normal);
+	font-size: 13px;
+	outline: none;
+}
+
+.kanban-search-input::placeholder {
+	color: var(--text-faint);
+}
+
+.kanban-search-clear {
+	display: flex;
+	cursor: pointer;
+	color: var(--text-muted);
+	padding: 2px;
+	border-radius: var(--kanban-radius-xs);
+}
+
+.kanban-search-clear:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+/* Sort Controls */
+.kanban-sort {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-md);
+}
+
+.kanban-sort-label {
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.kanban-sort-select {
+	padding: var(--kanban-spacing-xs) var(--kanban-spacing-md);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--kanban-radius-xs);
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.kanban-sort-select:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+}
+
+.kanban-sort-direction {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--kanban-btn-size-sm);
+	height: var(--kanban-btn-size-sm);
+	border: none;
+	border-radius: var(--kanban-radius-xs);
+	background-color: var(--background-modifier-hover);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.kanban-sort-direction:hover {
+	background-color: var(--background-modifier-active-hover);
+	color: var(--text-normal);
+}
+
+/* Action Buttons (New File, New Folder) */
+.kanban-actions {
+	display: flex;
+	gap: var(--kanban-spacing-md);
+	margin-left: auto;
+}
+
+.kanban-action-btn {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-sm);
+	padding: 6px 12px;
+	font-size: 13px;
+	border: none;
+	border-radius: var(--kanban-radius-sm);
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	transition: background-color var(--kanban-transition-fast), transform 0.1s ease;
+}
+
+.kanban-action-btn:hover {
+	background-color: var(--interactive-accent-hover);
+	transform: translateY(-1px);
+}
+
+.kanban-action-btn:active {
+	transform: translateY(0);
+}
+
+.kanban-action-btn svg {
+	flex-shrink: 0;
+}
+
+/* ============================================
+   Filter Chips
+   ============================================ */
+
+.kanban-filters {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-sm);
+	flex-shrink: 0;
+}
+
+.kanban-filter-chip {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-xs);
+	padding: 5px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--kanban-radius-pill);
+	background-color: var(--background-primary);
+	color: var(--text-muted);
+	font-size: 12px;
+	cursor: pointer;
+	transition: all var(--kanban-transition-fast);
+	white-space: nowrap;
+}
+
+.kanban-filter-chip:hover {
+	border-color: var(--text-accent);
+	color: var(--text-normal);
+	background-color: var(--background-primary-alt);
+}
+
+.kanban-filter-chip-active {
+	border-color: var(--text-accent);
+	background-color: rgba(var(--color-accent-rgb, 99, 102, 241), 0.15);
+	color: var(--text-accent);
+}
+
+.kanban-filter-chip-active:hover {
+	background-color: rgba(var(--color-accent-rgb, 99, 102, 241), 0.2);
+}
+
+.kanban-filter-chip-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.kanban-filter-chip-label {
+	font-weight: 500;
+}

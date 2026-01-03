@@ -1,0 +1,351 @@
+/* ============================================
+   Kanban 4000 - Embedded Kanban View
+   Styles for embedded kanban mode
+   ============================================ */
+
+.kanban-embedded-mode {
+	background-color: var(--background-primary);
+}
+
+.kanban-embedded-view {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+}
+
+/* Embedded Header */
+.kanban-embedded-header {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-lg);
+	padding: var(--kanban-spacing-lg) var(--kanban-spacing-xl);
+	background: linear-gradient(135deg, var(--interactive-accent) 0%, var(--interactive-accent-hover) 100%);
+	border-bottom: 2px solid var(--interactive-accent-hover);
+	flex-shrink: 0;
+}
+
+.kanban-embedded-close-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--kanban-btn-size-md);
+	height: var(--kanban-btn-size-md);
+	border: none;
+	border-radius: var(--kanban-radius-sm);
+	background-color: rgba(255, 255, 255, 0.2);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	transition: background-color var(--kanban-transition-fast);
+}
+
+.kanban-embedded-close-btn:hover {
+	background-color: rgba(255, 255, 255, 0.3);
+}
+
+.kanban-embedded-file-info {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex: 1;
+}
+
+.kanban-embedded-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-on-accent);
+}
+
+.kanban-embedded-title {
+	font-size: 16px;
+	font-weight: 600;
+	color: var(--text-on-accent);
+}
+
+.kanban-embedded-badge {
+	padding: var(--kanban-spacing-xs) 10px;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	border-radius: var(--kanban-radius-lg);
+	background-color: rgba(255, 255, 255, 0.25);
+	color: var(--text-on-accent);
+}
+
+.kanban-embedded-actions {
+	display: flex;
+	gap: var(--kanban-spacing-md);
+}
+
+.kanban-embedded-action-btn {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-sm);
+	padding: 6px 12px;
+	font-size: 13px;
+	border: none;
+	border-radius: var(--kanban-radius-sm);
+	background-color: rgba(255, 255, 255, 0.2);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	transition: background-color var(--kanban-transition-fast);
+}
+
+.kanban-embedded-action-btn:hover {
+	background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Embedded Board */
+.kanban-embedded-board {
+	display: flex;
+	gap: var(--kanban-spacing-xl);
+	padding: 20px;
+	overflow-x: auto;
+	overflow-y: hidden;
+	flex: 1;
+	align-items: flex-start;
+	background-color: var(--background-secondary);
+	background-image: 
+		radial-gradient(circle at 1px 1px, var(--background-modifier-border) 1px, transparent 0);
+	background-size: 20px 20px;
+}
+
+/* Embedded List */
+.kanban-embedded-list {
+	flex-shrink: 0;
+	width: 280px;
+	max-height: 100%;
+	display: flex;
+	flex-direction: column;
+	background-color: var(--background-primary);
+	border-radius: var(--kanban-radius-lg);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	overflow: hidden;
+}
+
+.kanban-embedded-list-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 14px var(--kanban-spacing-xl);
+	background-color: var(--background-secondary-alt);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.kanban-embedded-list-title {
+	font-weight: 600;
+	font-size: 14px;
+	color: var(--text-normal);
+}
+
+.kanban-embedded-list-count {
+	font-size: 12px;
+	color: var(--text-muted);
+	background-color: var(--background-modifier-hover);
+	padding: 2px var(--kanban-spacing-md);
+	border-radius: var(--kanban-radius-pill);
+}
+
+.kanban-embedded-items {
+	display: flex;
+	flex-direction: column;
+	gap: var(--kanban-spacing-sm);
+	padding: var(--kanban-spacing-lg);
+	overflow-y: auto;
+	flex: 1;
+}
+
+/* Embedded Item */
+.kanban-embedded-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 10px 12px;
+	background-color: var(--background-secondary);
+	border-radius: var(--kanban-radius-sm);
+	border: 1px solid var(--background-modifier-border);
+	transition: all var(--kanban-transition-fast);
+}
+
+.kanban-embedded-item:hover {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.kanban-embedded-item.completed {
+	opacity: 0.6;
+	background-color: var(--background-primary);
+}
+
+.kanban-embedded-item.completed .kanban-embedded-item-text {
+	text-decoration: line-through;
+	color: var(--text-muted);
+}
+
+.kanban-embedded-checkbox {
+	flex-shrink: 0;
+	margin-top: 2px;
+	cursor: pointer;
+}
+
+.kanban-embedded-item-text {
+	flex: 1;
+	font-size: 13px;
+	line-height: 1.4;
+	color: var(--text-normal);
+}
+
+/* Delete button on items */
+.kanban-embedded-item-delete {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: none;
+	border-radius: var(--kanban-radius-xs);
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+	opacity: 0;
+	transition: all var(--kanban-transition-fast);
+}
+
+.kanban-embedded-item:hover .kanban-embedded-item-delete {
+	opacity: 1;
+}
+
+.kanban-embedded-item-delete:hover {
+	background-color: var(--background-modifier-error);
+	color: var(--text-on-accent);
+}
+
+/* Add card button */
+.kanban-embedded-add-card-btn {
+	display: flex;
+	align-items: center;
+	gap: var(--kanban-spacing-sm);
+	width: 100%;
+	padding: var(--kanban-spacing-md) var(--kanban-spacing-lg);
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: var(--kanban-radius-sm);
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 13px;
+	cursor: pointer;
+	transition: all var(--kanban-transition-fast);
+}
+
+.kanban-embedded-add-card-btn:hover {
+	border-color: var(--interactive-accent);
+	color: var(--interactive-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+.kanban-embedded-add-card-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* Add list button */
+.kanban-embedded-add-list-btn {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--kanban-spacing-md);
+	flex-shrink: 0;
+	width: 260px;
+	min-height: 100px;
+	padding: 24px;
+	border: 2px dashed var(--background-modifier-border);
+	border-radius: var(--kanban-radius-lg);
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 14px;
+	cursor: pointer;
+	transition: all var(--kanban-transition-fast);
+}
+
+.kanban-embedded-add-list-btn:hover {
+	border-color: var(--interactive-accent);
+	color: var(--interactive-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+.kanban-embedded-add-list-btn svg {
+	width: 24px;
+	height: 24px;
+}
+
+/* Add card/list input container */
+.kanban-embedded-add-input,
+.kanban-embedded-add-list-input {
+	display: flex;
+	flex-direction: column;
+	gap: var(--kanban-spacing-md);
+	padding: 10px;
+	background-color: var(--background-secondary);
+	border-radius: var(--kanban-radius-sm);
+	border: 1px solid var(--interactive-accent);
+}
+
+.kanban-embedded-add-list-input {
+	flex-shrink: 0;
+	width: 260px;
+	padding: var(--kanban-spacing-xl);
+}
+
+.kanban-embedded-card-input,
+.kanban-embedded-list-input {
+	width: 100%;
+	padding: var(--kanban-spacing-md) 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--kanban-radius-xs);
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 13px;
+	outline: none;
+}
+
+.kanban-embedded-card-input:focus,
+.kanban-embedded-list-input:focus {
+	border-color: var(--interactive-accent);
+}
+
+.kanban-embedded-add-buttons {
+	display: flex;
+	gap: var(--kanban-spacing-md);
+}
+
+.kanban-embedded-confirm-btn,
+.kanban-embedded-cancel-btn {
+	padding: 6px 12px;
+	border: none;
+	border-radius: var(--kanban-radius-xs);
+	font-size: 12px;
+	cursor: pointer;
+	transition: all var(--kanban-transition-fast);
+}
+
+.kanban-embedded-confirm-btn {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.kanban-embedded-confirm-btn:hover {
+	opacity: 0.9;
+}
+
+.kanban-embedded-cancel-btn {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.kanban-embedded-cancel-btn:hover {
+	background-color: var(--background-modifier-active-hover);
+}

@@ -1,0 +1,246 @@
+/* ============================================
+   Kanban 4000 - Modal Styles
+   Image modal, rename/delete/create modals,
+   markdown editor modal
+   ============================================ */
+
+/* ============================================
+   Image Modal
+   ============================================ */
+
+.kanban-image-modal {
+	max-width: 90vw;
+	max-height: 90vh;
+}
+
+.kanban-image-modal h3 {
+	margin: 0 0 var(--kanban-spacing-xl) 0;
+	font-size: 16px;
+	color: var(--text-normal);
+}
+
+.kanban-image-modal-content {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	max-height: 70vh;
+	overflow: hidden;
+	border-radius: var(--kanban-radius-md);
+	background-color: var(--background-secondary);
+}
+
+.kanban-image-modal-content img {
+	max-width: 100%;
+	max-height: 70vh;
+	object-fit: contain;
+}
+
+.kanban-image-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--kanban-spacing-md);
+	margin-top: var(--kanban-spacing-xl);
+}
+
+.kanban-image-modal-actions button {
+	padding: var(--kanban-spacing-md) var(--kanban-spacing-xl);
+	border: none;
+	border-radius: var(--kanban-radius-sm);
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	font-size: 13px;
+	transition: opacity var(--kanban-transition-fast);
+}
+
+.kanban-image-modal-actions button:hover {
+	opacity: 0.9;
+}
+
+/* ============================================
+   Rename/Delete/Create Modals
+   ============================================ */
+
+.kanban-rename-modal,
+.kanban-delete-modal,
+.kanban-create-modal {
+	padding: var(--kanban-spacing-lg);
+}
+
+.kanban-rename-modal h3,
+.kanban-delete-modal h3,
+.kanban-create-modal h3 {
+	margin: 0 0 var(--kanban-spacing-xl) 0;
+	font-size: 18px;
+}
+
+.kanban-rename-input-container,
+.kanban-create-input-container {
+	margin-bottom: var(--kanban-spacing-xl);
+}
+
+.kanban-rename-input,
+.kanban-create-input {
+	width: 100%;
+	padding: var(--kanban-spacing-md) var(--kanban-spacing-lg);
+	font-size: 14px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--kanban-radius-sm);
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+}
+
+.kanban-rename-input:focus,
+.kanban-create-input:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+.kanban-create-location {
+	margin: 0 0 var(--kanban-spacing-lg) 0;
+	font-size: 13px;
+	color: var(--text-muted);
+}
+
+.kanban-delete-modal p {
+	margin: 0 0 var(--kanban-spacing-xl) 0;
+	font-size: 14px;
+	color: var(--text-normal);
+}
+
+/* Modal Buttons */
+.kanban-modal-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--kanban-spacing-md);
+}
+
+.kanban-modal-buttons button {
+	padding: var(--kanban-spacing-md) var(--kanban-spacing-xl);
+	font-size: 14px;
+	border: none;
+	border-radius: var(--kanban-radius-sm);
+	cursor: pointer;
+	transition: background-color var(--kanban-transition-fast);
+}
+
+.kanban-modal-buttons button:not(.mod-cta):not(.mod-warning) {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.kanban-modal-buttons button:not(.mod-cta):not(.mod-warning):hover {
+	background-color: var(--background-modifier-active-hover);
+}
+
+.kanban-modal-buttons button.mod-cta {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.kanban-modal-buttons button.mod-cta:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
+.kanban-modal-buttons button.mod-warning {
+	background-color: var(--text-error);
+	color: white;
+}
+
+.kanban-modal-buttons button.mod-warning:hover {
+	background-color: #c0392b;
+}
+
+/* ============================================
+   Markdown Editor Modal
+   ============================================ */
+
+.kanban-md-editor-modal {
+	width: 90vw;
+	max-width: 800px;
+	height: 80vh;
+	max-height: 700px;
+	display: flex;
+	flex-direction: column;
+}
+
+.kanban-md-modal-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--kanban-spacing-lg) var(--kanban-spacing-xl);
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.kanban-md-modal-title {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.kanban-md-modal-actions {
+	display: flex;
+	gap: var(--kanban-spacing-md);
+}
+
+.kanban-md-modal-btn {
+	padding: 6px 12px;
+	font-size: 13px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--kanban-radius-sm);
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: all var(--kanban-transition-fast);
+}
+
+.kanban-md-modal-btn:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.kanban-md-modal-btn.active {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.kanban-md-modal-content {
+	flex: 1;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+}
+
+.kanban-md-modal-display {
+	flex: 1;
+	overflow-y: auto;
+	padding: var(--kanban-spacing-xl);
+}
+
+.kanban-md-modal-display.hidden {
+	display: none;
+}
+
+.kanban-md-modal-editor {
+	flex: 1;
+	width: 100%;
+	padding: var(--kanban-spacing-xl);
+	font-family: var(--font-monospace);
+	font-size: 14px;
+	line-height: 1.6;
+	border: none;
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	resize: none;
+}
+
+.kanban-md-modal-editor.hidden {
+	display: none;
+}
+
+.kanban-md-modal-editor:focus {
+	outline: none;
+}

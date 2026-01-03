@@ -1,0 +1,54 @@
+/* ============================================
+   Kanban 4000 - CSS Custom Properties
+   ============================================ */
+
+.kanban-4000-container {
+	/* Border Radius */
+	--kanban-radius-xs: 4px;
+	--kanban-radius-sm: 6px;
+	--kanban-radius-md: 8px;
+	--kanban-radius-lg: 10px;
+	--kanban-radius-pill: 10px;
+
+	/* Transitions */
+	--kanban-transition-fast: 0.15s ease;
+	--kanban-transition-normal: 0.2s ease;
+	--kanban-transition-slow: 0.25s ease-out;
+
+	/* Spacing */
+	--kanban-spacing-xs: 4px;
+	--kanban-spacing-sm: 6px;
+	--kanban-spacing-md: 8px;
+	--kanban-spacing-lg: 12px;
+	--kanban-spacing-xl: 16px;
+
+	/* Card Colors */
+	--kanban-color-folder: #8b5cf6;
+	--kanban-color-folder-bg: rgba(139, 92, 246, 0.05);
+	--kanban-color-folder-bg-hover: rgba(139, 92, 246, 0.1);
+
+	--kanban-color-image: #10b981;
+	--kanban-color-image-bg: rgba(16, 185, 129, 0.05);
+	--kanban-color-image-bg-hover: rgba(16, 185, 129, 0.1);
+
+	--kanban-color-attachment: #f59e0b;
+	--kanban-color-attachment-bg: rgba(245, 158, 11, 0.05);
+	--kanban-color-attachment-bg-hover: rgba(245, 158, 11, 0.1);
+
+	/* Tag Colors */
+	--kanban-tag-red: #ef4444;
+	--kanban-tag-red-bg: rgba(239, 68, 68, 0.2);
+	--kanban-tag-green: #22c55e;
+	--kanban-tag-green-bg: rgba(34, 197, 94, 0.2);
+	--kanban-tag-blue: #3b82f6;
+	--kanban-tag-blue-bg: rgba(59, 130, 246, 0.2);
+	--kanban-tag-purple: #a855f7;
+	--kanban-tag-purple-bg: rgba(168, 85, 247, 0.2);
+	--kanban-tag-orange: #f97316;
+	--kanban-tag-orange-bg: rgba(249, 115, 22, 0.2);
+
+	/* Sizes */
+	--kanban-card-width: 280px;
+	--kanban-btn-size-sm: 28px;
+	--kanban-btn-size-md: 32px;
+}

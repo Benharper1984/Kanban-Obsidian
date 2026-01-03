@@ -1,0 +1,231 @@
+/* ============================================
+   Kanban 4000 - Board Layout Styles
+   Board, lists, cards container
+   ============================================ */
+
+/* Board Layout */
+.kanban-board {
+	display: flex;
+	gap: var(--kanban-spacing-xl);
+	padding: var(--kanban-spacing-xl);
+	overflow-x: auto;
+	overflow-y: hidden;
+	flex: 1;
+	align-items: flex-start;
+}
+
+/* List (Column) */
+.kanban-list {
+	flex-shrink: 0;
+	width: var(--kanban-card-width);
+	max-height: 100%;
+	display: flex;
+	flex-direction: column;
+	background-color: var(--background-secondary);
+	border-radius: var(--kanban-radius-lg);
+	overflow: hidden;
+	animation: fadeIn var(--kanban-transition-normal);
+}
+
+.kanban-list:nth-child(1) { animation-delay: 0ms; }
+.kanban-list:nth-child(2) { animation-delay: 50ms; }
+.kanban-list:nth-child(3) { animation-delay: 100ms; }
+.kanban-list:nth-child(4) { animation-delay: 150ms; }
+.kanban-list:nth-child(5) { animation-delay: 200ms; }
+
+/* List Header */
+.kanban-list-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--kanban-spacing-lg) 14px;
+	background-color: var(--background-secondary-alt);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.kanban-list-header-clickable {
+	cursor: pointer;
+	transition: background-color var(--kanban-transition-fast);
+}
+
+.kanban-list-header-clickable:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.kanban-list-header-clickable:active {
+	background-color: var(--background-modifier-active-hover);
+}
+
+/* List Type Indicator */
+.kanban-list-type-indicator {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	padding: 4px;
+	border-radius: var(--kanban-radius-xs);
+	color: var(--text-muted);
+}
+
+/* Loose files list styling */
+.kanban-list-loose-files .kanban-list-type-indicator {
+	color: var(--text-accent);
+	background-color: rgba(var(--color-accent-rgb, 99, 102, 241), 0.1);
+}
+
+/* Folder list styling */
+.kanban-list-folder .kanban-list-type-indicator {
+	color: var(--kanban-color-folder);
+	background-color: var(--kanban-color-folder-bg);
+}
+
+/* Title container for multi-line header */
+.kanban-list-title-container {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.kanban-list-title {
+	font-weight: 600;
+	font-size: 14px;
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Type label for loose files */
+.kanban-list-type-label {
+	font-size: 10px;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--text-accent);
+	opacity: 0.8;
+}
+
+.kanban-list-count {
+	font-size: 12px;
+	color: var(--text-muted);
+	background-color: var(--background-modifier-hover);
+	padding: 2px var(--kanban-spacing-md);
+	border-radius: var(--kanban-radius-pill);
+	min-width: 24px;
+	text-align: center;
+	flex-shrink: 0;
+}
+
+/* Cards Container */
+.kanban-cards {
+	display: flex;
+	flex-direction: column;
+	gap: var(--kanban-spacing-md);
+	padding: 10px;
+	overflow-y: auto;
+	flex: 1;
+	min-height: 50px;
+	transition: background-color var(--kanban-transition-fast);
+}
+
+/* New Note Button (at bottom of each list) */
+.kanban-new-note-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--kanban-spacing-sm);
+	width: 100%;
+	padding: 10px 12px;
+	background-color: transparent;
+	border: 2px dashed var(--background-modifier-border);
+	border-radius: var(--kanban-radius-md);
+	color: var(--text-muted);
+	font-size: 13px;
+	cursor: pointer;
+	transition: all var(--kanban-transition-fast);
+	margin-top: var(--kanban-spacing-xs);
+}
+
+.kanban-new-note-btn:hover {
+	background-color: var(--background-modifier-hover);
+	border-color: var(--text-accent);
+	color: var(--text-accent);
+}
+
+.kanban-new-note-btn:active {
+	transform: scale(0.98);
+}
+
+.kanban-new-note-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* New Folder List (at the end of the board) */
+.kanban-new-folder-list {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 120px;
+	background-color: transparent;
+	border: 2px dashed var(--background-modifier-border);
+	border-radius: var(--kanban-radius-lg);
+}
+
+.kanban-new-folder-btn {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--kanban-spacing-md);
+	width: 100%;
+	height: 100%;
+	padding: 20px;
+	background-color: transparent;
+	border: none;
+	border-radius: var(--kanban-radius-md);
+	color: var(--text-muted);
+	font-size: 13px;
+	cursor: pointer;
+	transition: all var(--kanban-transition-fast);
+}
+
+.kanban-new-folder-btn:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--kanban-color-folder);
+}
+
+.kanban-new-folder-btn:hover .kanban-new-folder-icon {
+	color: var(--kanban-color-folder);
+}
+
+.kanban-new-folder-btn:active {
+	transform: scale(0.98);
+}
+
+.kanban-new-folder-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.kanban-new-folder-icon svg {
+	width: 24px;
+	height: 24px;
+}
+
+/* Drag & Drop Styles */
+.kanban-card-dragging {
+	opacity: 0.5;
+	transform: rotate(2deg);
+}
+
+.kanban-drop-active {
+	background-color: var(--background-modifier-hover);
+	border: 2px dashed var(--interactive-accent);
+	border-radius: var(--kanban-radius-md);
+}
