@@ -13,16 +13,42 @@ A zoomable Trello-like interface that renders your Obsidian vault folder structu
 - **Automatic Board Generation**: Your vault folders become kanban lists, and files become cards
 - **Zoomable Navigation**: Click on folder cards to "zoom in" and view their contents as a new board
 - **Clickable List Headers**: Click on any list header to navigate directly into that folder
-- **Breadcrumb Navigation**: Always know where you are with clickable breadcrumbs
+- **Breadcrumb Navigation**: Always know where you are with fully clickable breadcrumbs at all levels
 - **Navigation History**: Go back to previous views using the back button or keyboard shortcuts
+- **List Type Indicators**: Clear visual distinction between loose file lists (📄) and subfolder lists (📁)
 
 ### 🎴 Rich Card Display
 
-- **File Type Icons**: Visual indicators for markdown files, images, and attachments
+- **File Type Icons**: Visual indicators for markdown files, images, folders, and attachments
+- **Color-Coded Cards**: Each file type has distinct accent colors and gradients:
+  - 📝 **Notes (Markdown)**: Blue accent
+  - 📁 **Folders**: Purple accent  
+  - 🖼️ **Images**: Green accent
+  - 📎 **Attachments**: Orange/amber accent
 - **Preview Text**: See the first ~100 characters of markdown files on cards
 - **Tag Display**: Automatically extracted tags shown on cards (clickable to filter)
-- **Image Thumbnails**: Preview images directly on cards
+- **Image Thumbnails**: Preview images directly on cards with hover expand button
 - **Context Menu**: Right-click cards for quick actions (rename, delete, open in new tab)
+
+### 🔍 Filter & Search
+
+- **Quick Filter Chips**: One-click filtering by file type in the toolbar:
+  - **All** - Show everything
+  - **Notes** - Only markdown files
+  - **Images** - Only image files
+  - **Files** - Only attachments (PDFs, etc.)
+  - **Folders** - Only folders
+- **Smart List Hiding**: Empty lists are automatically hidden when filters are active
+- **Real-time Search**: Filter cards by title, preview text, or tags
+- **Multiple Sort Options**: Sort by name, modified date, or created date
+- **Sort Direction Toggle**: Ascending or descending order
+
+### 🖼️ Image Preview
+
+- **Thumbnail Preview**: Image cards show inline thumbnails
+- **Hover Overlay**: Expand button appears on thumbnail hover
+- **Full-Size Modal**: Click thumbnail to open full-size image preview
+- **Quick Open**: Open image in new tab directly from preview modal
 
 ### ✏️ Markdown Editor Modal
 
@@ -65,9 +91,8 @@ Move files between folders by dragging cards from one list to another.
 
 ### ➕ Quick Create
 
-- **Inline New Note**: Each list has a "New Note" button at the bottom to create files directly in that folder
+- **Inline New Note**: Each list has a "+ New Note" button at the bottom to create files directly in that folder
 - **New Folder List**: A "New Folder" placeholder appears at the end of the board to quickly create new folders
-- **Toolbar Actions**: Additional new file/folder buttons in the toolbar for quick access
 
 ### ⚙️ Customizable Settings
 
@@ -182,15 +207,37 @@ src/
 │   ├── BoardRenderer.ts      # Board, list, and card rendering
 │   ├── CardActionHandler.ts  # Card click actions, modals, embedded kanban
 │   ├── DragDropHandler.ts    # Drag & drop functionality
-│   └── ToolbarRenderer.ts    # Header, breadcrumbs, search, sort controls
-└── components/
-    ├── index.ts              # Barrel export for components
-    ├── ContextMenu.ts        # Right-click context menu for cards
-    ├── CreateItemModal.ts    # Modal for creating new files/folders
-    ├── EmbeddedKanbanViewer.ts # Interactive embedded kanban board
-    ├── Icons.ts              # SVG icon definitions
-    ├── ImagePreviewModal.ts  # Full-size image preview modal
-    └── MarkdownEditorModal.ts # Markdown editor/preview modal
+│   └── ToolbarRenderer.ts    # Header, breadcrumbs, search, sort, filter controls
+├── bookmarks/
+│   ├── index.ts              # Barrel export for bookmarks modules
+│   ├── BookmarkBuilder.ts    # Bookmark data construction
+│   ├── BookmarkKanbanView.ts # Bookmarks kanban view
+│   ├── BookmarkRenderer.ts   # Bookmark card rendering
+│   └── types.ts              # Bookmark-specific types
+├── components/
+│   ├── index.ts              # Barrel export for components
+│   ├── ContextMenu.ts        # Right-click context menu for cards
+│   ├── CreateItemModal.ts    # Modal for creating new files/folders
+│   ├── EmbeddedKanbanViewer.ts # Interactive embedded kanban board
+│   ├── Icons.ts              # SVG icon definitions
+│   ├── ImagePreviewModal.ts  # Full-size image preview modal
+│   └── MarkdownEditorModal.ts # Markdown editor/preview modal
+├── core-integration/
+│   ├── index.ts              # Barrel export for core integration
+│   ├── CoreBoardBuilder.ts   # Board builder with Navigator Core support
+│   ├── KanbanViewPlugin.ts   # Navigator Core plugin interface
+│   ├── VaultItemAdapter.ts   # Adapter for vault items
+│   └── types.ts              # Core integration types
+styles/
+├── base.css          # Base container styles
+├── board.css         # Board and list layout
+├── cards.css         # Card styles and type variants
+├── header.css        # Header, toolbar, breadcrumbs, filters
+├── modals.css        # Modal dialogs
+├── bookmarks.css     # Bookmark-specific styles
+├── embedded.css      # Embedded kanban styles
+├── responsive.css    # Responsive breakpoints
+└── variables.css     # CSS custom properties
 ```
 
 ## License
