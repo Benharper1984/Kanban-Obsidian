@@ -7,7 +7,21 @@ export interface BoardState {
 	sortBy: SortOption;
 	sortDirection: 'asc' | 'desc';
 	typeFilters: CardType[];  // Which types to show (empty = all)
+	showBookmarksOnly: boolean;  // Filter to show only bookmarked items
+	tagFilters: string[];  // Selected tags to filter by
+	tagFilterMode: 'any' | 'all';  // Match any tag or require all tags
+	dateFilter?: DateFilter;  // Filter by date range
 }
+
+// Date range filter configuration
+export interface DateFilter {
+	field: 'created' | 'modified';
+	preset?: DatePreset;
+	start?: number;  // Unix timestamp
+	end?: number;    // Unix timestamp
+}
+
+export type DatePreset = 'today' | 'yesterday' | 'week' | 'month' | 'year';
 
 export type SortOption = 'name' | 'modified' | 'created';
 
@@ -18,14 +32,20 @@ export interface SavedFilter {
 	icon?: string;
 	typeFilters: CardType[];
 	searchQuery?: string;
+	isBookmarkFilter?: boolean;  // Special flag for bookmarks filter
+	tagFilters?: string[];  // User-saved tag filters
+	tagFilterMode?: 'any' | 'all';  // Tag match mode
+	dateFilter?: DateFilter;  // User-saved date filter
+	isDefault?: boolean;  // Built-in filters cannot be deleted
 }
 
 export const DEFAULT_SAVED_FILTERS: SavedFilter[] = [
-	{ id: 'all', name: 'All', icon: 'layers', typeFilters: [] },
-	{ id: 'notes', name: 'Notes', icon: 'file-text', typeFilters: ['markdown'] },
-	{ id: 'images', name: 'Images', icon: 'image', typeFilters: ['image'] },
-	{ id: 'attachments', name: 'Files', icon: 'paperclip', typeFilters: ['attachment'] },
-	{ id: 'folders', name: 'Folders', icon: 'folder', typeFilters: ['folder'] },
+	{ id: 'all', name: 'All', icon: 'layers', typeFilters: [], isDefault: true },
+	{ id: 'notes', name: 'Notes', icon: 'file-text', typeFilters: ['markdown'], isDefault: true },
+	{ id: 'images', name: 'Images', icon: 'image', typeFilters: ['image'], isDefault: true },
+	{ id: 'attachments', name: 'Files', icon: 'paperclip', typeFilters: ['attachment'], isDefault: true },
+	{ id: 'folders', name: 'Folders', icon: 'folder', typeFilters: ['folder'], isDefault: true },
+	{ id: 'bookmarks', name: 'Bookmarks', icon: 'bookmark', typeFilters: [], isBookmarkFilter: true, isDefault: true },
 ];
 
 export interface KanbanList {
@@ -45,6 +65,10 @@ export interface KanbanCard {
 	tags?: string[];
 	hasKanbanSyntax?: boolean;
 	kanbanLists?: KanbanMdList[];
+	/** Whether this card is highlighted (from shared state) */
+	isHighlighted?: boolean;
+	/** Whether this card is selected (from shared state) */
+	isSelected?: boolean;
 }
 
 // For kanban syntax in markdown files

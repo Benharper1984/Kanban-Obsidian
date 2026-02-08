@@ -38,6 +38,15 @@ A zoomable Trello-like interface that renders your Obsidian vault folder structu
   - **Images** - Only image files
   - **Files** - Only attachments (PDFs, etc.)
   - **Folders** - Only folders
+- **🏷️ Tag Filtering** (NEW): Filter by frontmatter tags with:
+  - **Multi-select dropdown**: Choose multiple tags to filter by
+  - **Any/All mode toggle**: Match files with ANY selected tag or ALL selected tags
+  - **Auto-collection**: Tags are automatically collected from all files in the current view
+- **📅 Date Range Filtering** (NEW): Filter by modification date with:
+  - **Preset ranges**: Today, Yesterday, Last 7 Days, Last 30 Days, This Month, This Year
+  - **Custom range**: Pick specific start and end dates
+  - **Clear filter**: One-click reset to show all dates
+- **🎯 Filter Indicator**: Visual badge in toolbar shows count of active filters with one-click clear all
 - **Smart List Hiding**: Empty lists are automatically hidden when filters are active
 - **Real-time Search**: Filter cards by title, preview text, or tags
 - **Multiple Sort Options**: Sort by name, modified date, or created date
@@ -198,9 +207,10 @@ npm run build
 ```
 src/
 ├── main.ts           # Plugin entry point, commands, and event handlers
-├── KanbanView.ts     # Main view class, lifecycle, navigation
+├── KanbanView.ts     # Main view class, lifecycle, navigation, state management
+├── BookmarkService.ts # Obsidian bookmarks integration service
 ├── settings.ts       # Settings tab and configuration
-├── types.ts          # TypeScript interfaces and utility functions
+├── types.ts          # TypeScript interfaces, filter types, utility functions
 ├── board/
 │   ├── index.ts              # Barrel export for board modules
 │   ├── BoardBuilder.ts       # Board construction, file-to-card conversion, sorting
@@ -208,12 +218,6 @@ src/
 │   ├── CardActionHandler.ts  # Card click actions, modals, embedded kanban
 │   ├── DragDropHandler.ts    # Drag & drop functionality
 │   └── ToolbarRenderer.ts    # Header, breadcrumbs, search, sort, filter controls
-├── bookmarks/
-│   ├── index.ts              # Barrel export for bookmarks modules
-│   ├── BookmarkBuilder.ts    # Bookmark data construction
-│   ├── BookmarkKanbanView.ts # Bookmarks kanban view
-│   ├── BookmarkRenderer.ts   # Bookmark card rendering
-│   └── types.ts              # Bookmark-specific types
 ├── components/
 │   ├── index.ts              # Barrel export for components
 │   ├── ContextMenu.ts        # Right-click context menu for cards
@@ -222,23 +226,63 @@ src/
 │   ├── Icons.ts              # SVG icon definitions
 │   ├── ImagePreviewModal.ts  # Full-size image preview modal
 │   └── MarkdownEditorModal.ts # Markdown editor/preview modal
-├── core-integration/
-│   ├── index.ts              # Barrel export for core integration
-│   ├── CoreBoardBuilder.ts   # Board builder with Navigator Core support
-│   ├── KanbanViewPlugin.ts   # Navigator Core plugin interface
-│   ├── VaultItemAdapter.ts   # Adapter for vault items
-│   └── types.ts              # Core integration types
+└── core-integration/
+    ├── index.ts              # Barrel export for core integration
+    ├── CoreBoardBuilder.ts   # Board builder with filtering (tags, dates, type)
+    ├── CoreStateSync.ts      # State synchronization utilities
+    ├── KanbanViewPlugin.ts   # Navigator Core plugin interface
+    ├── VaultItemAdapter.ts   # Adapter for vault items
+    └── types.ts              # Core integration types
 styles/
+├── variables.css     # CSS custom properties (colors, spacing, z-index)
 ├── base.css          # Base container styles
+├── header.css        # Header, toolbar, breadcrumbs, filter dropdowns
 ├── board.css         # Board and list layout
 ├── cards.css         # Card styles and type variants
-├── header.css        # Header, toolbar, breadcrumbs, filters
-├── modals.css        # Modal dialogs
 ├── bookmarks.css     # Bookmark-specific styles
+├── modals.css        # Modal dialogs
 ├── embedded.css      # Embedded kanban styles
-├── responsive.css    # Responsive breakpoints
-└── variables.css     # CSS custom properties
+└── responsive.css    # Responsive breakpoints
 ```
+
+### Build System
+
+The plugin uses **esbuild** for fast builds:
+
+```bash
+npm run build    # Production build
+npm run dev      # Development build with watch mode
+```
+
+**Build outputs:**
+- `main.js` - Compiled TypeScript bundle
+- `styles.css` - Concatenated CSS from all `styles/*.css` files
+
+## Architecture
+
+### Key Design Patterns
+
+- **State-Driven Rendering**: `BoardState` in `types.ts` holds all view state (filters, sort, search). State changes trigger re-renders.
+- **Modular Components**: Each concern is separated into focused modules (rendering, filtering, drag-drop, etc.)
+- **Callback-Based Communication**: Child components communicate upward via callbacks passed from `KanbanView`
+- **Inline Style Show/Hide**: Dropdown panels use `style.display` for visibility (more reliable than CSS classes with Obsidian's caching)
+
+### Filter Pipeline
+
+Cards flow through a multi-stage filter pipeline in `CoreBoardBuilder.processCards()`:
+
+1. **Type Filter** - Filter by file type (markdown, image, folder, etc.)
+2. **Tag Filter** - Filter by frontmatter tags (any/all matching mode)
+3. **Date Filter** - Filter by modification date range or preset
+
+All filters are additive (AND logic between filter types).
+
+### Navigator Core Integration
+
+The plugin is designed to work with the Navigator Core ecosystem:
+- `KanbanViewPlugin` implements the `NavigatorViewPlugin` interface
+- `VaultItemAdapter` converts between core and plugin types
+- Graceful fallback when core is not available
 
 ## License
 

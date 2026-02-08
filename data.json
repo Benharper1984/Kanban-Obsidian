@@ -1,0 +1,29 @@
+{
+  "excludePatterns": [
+    ".obsidian",
+    "_templates",
+    "templates",
+    ".trash"
+  ],
+  "defaultSortBy": "name",
+  "defaultSortDirection": "asc",
+  "rootFolder": "/",
+  "showPreviewText": true,
+  "showTags": true,
+  "showImageThumbnails": true,
+  "cardWidth": 240,
+  "maxTagsShown": 5,
+  "enableAnimations": true,
+  "autoRefresh": true,
+  "wrapLists": true,
+  "savedFilters": [
+    {
+      "id": "custom-1768245424428",
+      "name": "test",
+      "typeFilters": [],
+      "tagFilterMode": "any",
+      "searchQuery": "test"
+    }
+  ],
+  "showUndoNotifications": true
+}

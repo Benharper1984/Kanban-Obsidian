@@ -1,5 +1,6 @@
-import { Menu, TFile, TFolder, App, Notice } from 'obsidian';
+import { Menu, TFile, TFolder, App, Notice, Platform } from 'obsidian';
 import { KanbanCard } from '../types';
+import { UndoManager } from '../UndoManager';
 
 export interface ContextMenuCallbacks {
 	onRename: (card: KanbanCard) => Promise<void>;
@@ -83,6 +84,16 @@ export class CardContextMenu {
 				.setIcon('copy')
 				.onClick(() => this.callbacks.onCopyPath(card));
 		});
+
+		// Reveal in system file explorer (desktop only)
+		if (Platform.isDesktop) {
+			menu.addItem((item) => {
+				item
+					.setTitle(Platform.isMacOS ? 'Reveal in Finder' : 'Show in Explorer')
+					.setIcon('folder-open')
+					.onClick(() => this.revealInSystemExplorer(card));
+			});
+		}
 	}
 
 	private buildFileMenu(menu: Menu, card: KanbanCard) {
@@ -139,11 +150,46 @@ export class CardContextMenu {
 				.setIcon('copy')
 				.onClick(() => this.callbacks.onCopyPath(card));
 		});
+
+		// Reveal in system file explorer (desktop only)
+		if (Platform.isDesktop) {
+			menu.addItem((item) => {
+				item
+					.setTitle(Platform.isMacOS ? 'Reveal in Finder' : 'Show in Explorer')
+					.setIcon('folder-open')
+					.onClick(() => this.revealInSystemExplorer(card));
+			});
+		}
+	}
+
+	/**
+	 * Reveal file or folder in the system file explorer (Finder/Explorer)
+	 */
+	private revealInSystemExplorer(card: KanbanCard): void {
+		const file = card.file || card.folder;
+		if (!file) return;
+
+		// Get the vault's base path
+		const vaultPath = (this.app.vault.adapter as any).basePath;
+		if (!vaultPath) {
+			new Notice('Cannot determine vault location');
+			return;
+		}
+
+		const fullPath = `${vaultPath}/${file.path}`;
+
+		try {
+			// Use Electron's shell module to open in system explorer
+			const { shell } = require('electron');
+			shell.showItemInFolder(fullPath);
+		} catch (e) {
+			new Notice('Failed to open file explorer');
+		}
 	}
 }
 
 // Helper functions for context menu actions
-export async function renameItem(app: App, card: KanbanCard): Promise<boolean> {
+export async function renameItem(app: App, card: KanbanCard, undoManager?: UndoManager): Promise<boolean> {
 	const file = card.file || card.folder;
 	if (!file) return false;
 
@@ -159,9 +205,18 @@ export async function renameItem(app: App, card: KanbanCard): Promise<boolean> {
 			}
 
 			try {
+				const oldPath = file.path;
 				const parentPath = file.parent?.path || '';
 				const newPath = parentPath ? `${parentPath}/${newName}${extension}` : `${newName}${extension}`;
+				
 				await app.fileManager.renameFile(file, newPath);
+				
+				// Push undo action after successful rename
+				if (undoManager) {
+					const undoAction = undoManager.createRenameAction(file, oldPath, newPath);
+					undoManager.push(undoAction);
+				}
+				
 				new Notice(`Renamed to "${newName}${extension}"`);
 				resolve(true);
 			} catch (e) {
@@ -173,7 +228,7 @@ export async function renameItem(app: App, card: KanbanCard): Promise<boolean> {
 	});
 }
 
-export async function deleteItem(app: App, card: KanbanCard): Promise<boolean> {
+export async function deleteItem(app: App, card: KanbanCard, undoManager?: UndoManager): Promise<boolean> {
 	const file = card.file || card.folder;
 	if (!file) return false;
 
@@ -183,7 +238,16 @@ export async function deleteItem(app: App, card: KanbanCard): Promise<boolean> {
 	return new Promise((resolve) => {
 		const modal = new ConfirmDeleteModal(app, card.title, itemType, async () => {
 			try {
+				const originalPath = file.path;
+				
 				await app.vault.trash(file, true);
+				
+				// Push undo action after successful delete
+				if (undoManager) {
+					const undoAction = undoManager.createDeleteAction(file, originalPath);
+					undoManager.push(undoAction);
+				}
+				
 				new Notice(`Moved "${card.title}" to trash`);
 				resolve(true);
 			} catch (e) {
@@ -214,7 +278,7 @@ export function revealInNavigation(app: App, card: KanbanCard) {
 // Rename Modal
 import { Modal, TextComponent } from 'obsidian';
 
-class RenameModal extends Modal {
+export class RenameModal extends Modal {
 	private name: string;
 	private onSubmit: (name: string) => void;
 

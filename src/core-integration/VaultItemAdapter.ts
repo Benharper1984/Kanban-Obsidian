@@ -9,9 +9,9 @@ import {
 	CardType, 
 	getCardType, 
 	parseKanbanSyntax 
-} from './types';
+} from '../types';
 
-// Try to import from core, with fallback types
+// Navigator Core types (mirrored for when core isn't available)
 interface VaultItem {
 	path: string;
 	title: string;

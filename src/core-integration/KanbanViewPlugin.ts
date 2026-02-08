@@ -14,6 +14,9 @@ import {
 	MetadataType,
 	NavigatorCore
 } from './types';
+import { CoreStateSync, applyHighlighting } from './CoreStateSync';
+import { VaultItemAdapter } from './VaultItemAdapter';
+import { KanbanList, KanbanCard } from '../types';
 import Kanban4000Plugin from '../main';
 
 /**
@@ -22,44 +25,33 @@ import Kanban4000Plugin from '../main';
  */
 export class KanbanViewPlugin implements NavigatorViewPlugin {
 	manifest: ViewPluginManifest = {
-		id: 'kanban',
+		id: 'kanban-4000',
 		name: 'Kanban Board',
 		icon: 'layout-dashboard',
 		description: 'View vault items as a kanban board organized by folders'
 	};
 
 	private plugin: Kanban4000Plugin;
-	private core: NavigatorCore | null = null;
-	private highlightedItems: string[] = [];
+	private stateSync: CoreStateSync;
 
 	constructor(plugin: Kanban4000Plugin) {
 		this.plugin = plugin;
+		this.stateSync = new CoreStateSync();
 	}
 
 	/**
 	 * Called when registered with Navigator Core
 	 */
 	onRegister(core: NavigatorCore): void {
-		this.core = core;
+		this.stateSync.connect(core);
 		console.log('Kanban 4000: Registered with Navigator Core');
-		
-		// Subscribe to state changes for cross-view highlighting
-		core.on('state-change', (payload: { current: ViewState; previous: ViewState }) => {
-			const { current } = payload;
-			if (current.focusedItem) {
-				this.highlightedItems = [current.focusedItem, ...current.selectedItems];
-			} else {
-				this.highlightedItems = [...current.selectedItems];
-			}
-		});
 	}
 
 	/**
 	 * Called when unregistered from Navigator Core
 	 */
 	onUnregister(): void {
-		this.core = null;
-		this.highlightedItems = [];
+		this.stateSync.disconnect();
 		console.log('Kanban 4000: Unregistered from Navigator Core');
 	}
 
@@ -67,7 +59,7 @@ export class KanbanViewPlugin implements NavigatorViewPlugin {
 	 * Create a view instance - returns a KanbanNavigatorView wrapper
 	 */
 	createView(leaf: WorkspaceLeaf): NavigatorView {
-		return new KanbanNavigatorView(leaf, this.plugin, this.core);
+		return new KanbanNavigatorView(leaf, this.plugin, this.stateSync);
 	}
 
 	/**
@@ -89,14 +81,21 @@ export class KanbanViewPlugin implements NavigatorViewPlugin {
 	 * Get currently highlighted items for cross-view sync
 	 */
 	getHighlightedItems(): string[] {
-		return this.highlightedItems;
+		return this.stateSync.getHighlightedItems();
+	}
+
+	/**
+	 * Get the CoreStateSync instance (for sharing with KanbanView)
+	 */
+	getStateSync(): CoreStateSync {
+		return this.stateSync;
 	}
 
 	/**
 	 * Get reference to Navigator Core
 	 */
 	getCore(): NavigatorCore | null {
-		return this.core;
+		return this.stateSync.getCore();
 	}
 }
 
@@ -107,15 +106,23 @@ export class KanbanViewPlugin implements NavigatorViewPlugin {
 class KanbanNavigatorView implements NavigatorView {
 	private leaf: WorkspaceLeaf;
 	private plugin: Kanban4000Plugin;
-	private core: NavigatorCore | null;
+	private stateSync: CoreStateSync;
+	private adapter: VaultItemAdapter;
 	private containerEl: HTMLElement | null = null;
 	private currentPath: string = '/';
 	private currentState: ViewState | null = null;
+	private stateUnsubscribe: (() => void) | null = null;
 
-	constructor(leaf: WorkspaceLeaf, plugin: Kanban4000Plugin, core: NavigatorCore | null) {
+	constructor(leaf: WorkspaceLeaf, plugin: Kanban4000Plugin, stateSync: CoreStateSync) {
 		this.leaf = leaf;
 		this.plugin = plugin;
-		this.core = core;
+		this.stateSync = stateSync;
+		this.adapter = new VaultItemAdapter(plugin.app);
+		
+		// Subscribe to state changes for highlighting updates
+		this.stateUnsubscribe = stateSync.onStateChange((state) => {
+			this.onSharedStateChange(state);
+		});
 	}
 
 	/**
@@ -124,10 +131,6 @@ class KanbanNavigatorView implements NavigatorView {
 	render(items: VaultItem[], state: ViewState): void {
 		this.currentState = state;
 		
-		// The actual rendering is delegated to KanbanView
-		// This is called by NavigatorViewWrapper
-		// We store the state for reference
-		
 		// If we have a container, render into it
 		if (this.containerEl) {
 			this.renderBoard(items, state);
@@ -135,32 +138,88 @@ class KanbanNavigatorView implements NavigatorView {
 	}
 
 	/**
-	 * Render the kanban board
+	 * Render the kanban board from VaultItems
 	 */
-	private renderBoard(items: VaultItem[], state: ViewState): void {
-		// This will be called by the view wrapper
-		// Actual board rendering is handled by existing BoardRenderer
-		// We just need to transform items appropriately
+	private async renderBoard(items: VaultItem[], state: ViewState): Promise<void> {
+		if (!this.containerEl) return;
+		
+		// Convert VaultItems to KanbanCards using the adapter
+		const cards = await this.adapter.toKanbanCards(items, state);
+		
+		// Group cards into lists (by parent folder)
+		const lists = this.groupCardsIntoLists(cards);
+		
+		// The actual rendering would use BoardRenderer here
+		// For now, this bridges the gap between core and existing renderer
+		// The KanbanView still handles the main rendering - this provides
+		// core-driven data when available
+	}
+
+	/**
+	 * Group cards into KanbanLists by their parent folder
+	 */
+	private groupCardsIntoLists(cards: KanbanCard[]): KanbanList[] {
+		const folderMap = new Map<string, KanbanCard[]>();
+		const looseFiles: KanbanCard[] = [];
+		
+		for (const card of cards) {
+			if (card.type === 'folder') {
+				// Folders become their own list headers
+				const folderPath = card.path;
+				if (!folderMap.has(folderPath)) {
+					folderMap.set(folderPath, []);
+				}
+			} else {
+				// Files go into their parent folder's list
+				const parentPath = card.path.substring(0, card.path.lastIndexOf('/')) || '/';
+				if (parentPath === this.currentPath || parentPath === '/') {
+					looseFiles.push(card);
+				} else if (folderMap.has(parentPath)) {
+					folderMap.get(parentPath)!.push(card);
+				}
+			}
+		}
+		
+		const lists: KanbanList[] = [];
+		
+		// Add loose files list first
+		if (looseFiles.length > 0) {
+			lists.push({
+				title: 'Files',
+				path: this.currentPath,
+				isLooseFiles: true,
+				cards: looseFiles
+			});
+		}
+		
+		// Add folder lists
+		for (const [path, folderCards] of folderMap) {
+			const folderName = path.split('/').pop() || path;
+			lists.push({
+				title: folderName,
+				path: path,
+				isLooseFiles: false,
+				cards: folderCards
+			});
+		}
+		
+		return lists;
 	}
 
 	/**
 	 * Handle item selection
 	 */
 	onItemSelect(path: string): void {
-		if (this.core) {
-			// Update shared state when an item is selected
-			this.core.updateSharedState({
-				focusedItem: path
-			});
-		}
+		this.stateSync.setFocusedItem(path);
 	}
 
 	/**
 	 * Handle filter changes
 	 */
 	onFilterChange(filters: FilterState): void {
-		if (this.core) {
-			this.core.updateFilters(filters);
+		const core = this.stateSync.getCore();
+		if (core) {
+			core.updateFilters(filters);
 		}
 	}
 
@@ -198,6 +257,10 @@ class KanbanNavigatorView implements NavigatorView {
 	 * Cleanup resources
 	 */
 	cleanup(): void {
+		if (this.stateUnsubscribe) {
+			this.stateUnsubscribe();
+			this.stateUnsubscribe = null;
+		}
 		this.containerEl = null;
 		this.currentState = null;
 	}
@@ -206,42 +269,9 @@ class KanbanNavigatorView implements NavigatorView {
 	 * Handle shared state changes (cross-view highlighting)
 	 */
 	onSharedStateChange(state: ViewState): void {
-		// Update highlighting based on shared state
+		// Use centralized highlighting function
 		if (this.containerEl) {
-			this.updateHighlighting(state);
-		}
-	}
-
-	/**
-	 * Update card highlighting based on shared state
-	 */
-	private updateHighlighting(state: ViewState): void {
-		if (!this.containerEl) return;
-
-		// Remove existing highlights
-		this.containerEl.querySelectorAll('.kanban-card-highlighted').forEach(el => {
-			el.removeClass('kanban-card-highlighted');
-		});
-		this.containerEl.querySelectorAll('.kanban-card-selected').forEach(el => {
-			el.removeClass('kanban-card-selected');
-		});
-
-		// Add highlight to focused item
-		if (state.focusedItem) {
-			const focusedCard = this.containerEl.querySelector(
-				`[data-path="${state.focusedItem}"]`
-			);
-			if (focusedCard) {
-				focusedCard.addClass('kanban-card-highlighted');
-			}
-		}
-
-		// Add selection to selected items
-		for (const path of state.selectedItems) {
-			const selectedCard = this.containerEl.querySelector(`[data-path="${path}"]`);
-			if (selectedCard) {
-				selectedCard.addClass('kanban-card-selected');
-			}
+			applyHighlighting(this.containerEl, state);
 		}
 	}
 }

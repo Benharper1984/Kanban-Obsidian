@@ -5,12 +5,61 @@
    ============================================ */
 
 /* ============================================
+   Bookmark Button (shared across modals)
+   ============================================ */
+
+.kanban-modal-bookmark-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: var(--kanban-spacing-sm);
+	border-radius: var(--kanban-radius-sm);
+	color: var(--text-muted);
+	transition: color var(--kanban-transition-fast), background var(--kanban-transition-fast);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.kanban-modal-bookmark-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.kanban-modal-bookmark-btn.is-bookmarked {
+	color: var(--interactive-accent);
+}
+
+.kanban-modal-bookmark-btn.is-bookmarked svg {
+	fill: var(--interactive-accent);
+}
+
+/* ============================================
    Image Modal
    ============================================ */
 
 .kanban-image-modal {
 	max-width: 90vw;
 	max-height: 90vh;
+}
+
+.kanban-image-modal-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--kanban-spacing-md);
+	margin-bottom: var(--kanban-spacing-xl);
+}
+
+.kanban-image-modal-header h3 {
+	margin: 0;
+	font-size: 16px;
+	color: var(--text-normal);
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .kanban-image-modal h3 {
@@ -103,6 +152,25 @@
 	color: var(--text-muted);
 }
 
+/* Create as Kanban toggle */
+.kanban-create-toggle-container {
+	margin-bottom: var(--kanban-spacing-lg);
+	padding: var(--kanban-spacing-sm) 0;
+}
+
+.kanban-create-toggle-container .setting-item {
+	border-top: none;
+	padding-top: 0;
+}
+
+.kanban-create-toggle-container .setting-item-name {
+	font-size: 14px;
+}
+
+.kanban-create-toggle-container .setting-item-description {
+	font-size: 12px;
+}
+
 .kanban-delete-modal p {
 	margin: 0 0 var(--kanban-spacing-xl) 0;
 	font-size: 14px;
@@ -156,9 +224,28 @@
    Markdown Editor Modal
    ============================================ */
 
+/* Wide modal wrapper - applied to modalEl */
+.kanban-markdown-modal-wide {
+	width: 95vw !important;
+	max-width: 1200px !important;
+}
+
+.kanban-markdown-modal-wide .modal-content {
+	max-height: 80vh;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+/* Responsive fallback for mobile */
+@media (max-width: 600px) {
+	.kanban-markdown-modal-wide {
+		width: 98vw !important;
+		max-width: none !important;
+	}
+}
+
 .kanban-md-editor-modal {
-	width: 90vw;
-	max-width: 800px;
+	width: 100%;
 	height: 80vh;
 	max-height: 700px;
 	display: flex;
@@ -169,9 +256,14 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	gap: var(--kanban-spacing-md);
 	padding: var(--kanban-spacing-lg) var(--kanban-spacing-xl);
 	border-bottom: 1px solid var(--background-modifier-border);
 	flex-shrink: 0;
+	position: sticky;
+	top: 0;
+	background: var(--background-primary);
+	z-index: 10;
 }
 
 .kanban-md-modal-title {
@@ -179,11 +271,17 @@
 	font-size: 18px;
 	font-weight: 600;
 	color: var(--text-normal);
+	flex-shrink: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .kanban-md-modal-actions {
 	display: flex;
 	gap: var(--kanban-spacing-md);
+	flex-shrink: 0;
 }
 
 .kanban-md-modal-btn {
@@ -205,6 +303,24 @@
 	background-color: var(--interactive-accent);
 	color: var(--text-on-accent);
 	border-color: var(--interactive-accent);
+}
+
+.kanban-md-modal-open-btn {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.kanban-md-modal-open-btn:hover {
+	background-color: var(--interactive-accent-hover);
+	border-color: var(--interactive-accent-hover);
+}
+
+.kanban-md-modal-open-btn svg {
+	flex-shrink: 0;
 }
 
 .kanban-md-modal-content {
@@ -243,4 +359,20 @@
 
 .kanban-md-modal-editor:focus {
 	outline: none;
+}
+
+/* ============================================
+   Undo Notification Link
+   ============================================ */
+
+.kanban-undo-link {
+	color: var(--interactive-accent);
+	cursor: pointer;
+	text-decoration: underline;
+	font-weight: 500;
+}
+
+.kanban-undo-link:hover {
+	color: var(--interactive-accent-hover);
+	text-decoration: none;
 }

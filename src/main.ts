@@ -1,9 +1,9 @@
 import { Plugin, WorkspaceLeaf, TAbstractFile } from 'obsidian';
 import { KanbanView, VIEW_TYPE_KANBAN } from './KanbanView';
-import { BookmarkKanbanView, VIEW_TYPE_BOOKMARK_KANBAN } from './bookmarks';
 import { Kanban4000Settings, DEFAULT_SETTINGS, Kanban4000SettingTab } from './settings';
 import { KanbanViewPlugin } from './core-integration';
 import type { NavigatorCore } from './core-integration/types';
+import { UndoManager } from './UndoManager';
 
 // Declare global NavigatorCore type
 declare global {
@@ -14,6 +14,7 @@ declare global {
 
 export default class Kanban4000Plugin extends Plugin {
 	settings: Kanban4000Settings;
+	undoManager: UndoManager;
 	private fileChangeTimeout: NodeJS.Timeout | null = null;
 	private kanbanViewPlugin: KanbanViewPlugin | null = null;
 	private coreConnected: boolean = false;
@@ -22,16 +23,14 @@ export default class Kanban4000Plugin extends Plugin {
 		// Load settings
 		await this.loadSettings();
 
+		// Initialize undo manager
+		this.undoManager = new UndoManager(this.app);
+		this.undoManager.setShowNotifications(this.settings.showUndoNotifications);
+
 		// Register the custom view
 		this.registerView(
 			VIEW_TYPE_KANBAN,
 			(leaf) => new KanbanView(leaf, this)
-		);
-
-		// Register the bookmark kanban view
-		this.registerView(
-			VIEW_TYPE_BOOKMARK_KANBAN,
-			(leaf) => new BookmarkKanbanView(leaf, this)
 		);
 
 		// Try to register with Navigator Core
@@ -45,26 +44,12 @@ export default class Kanban4000Plugin extends Plugin {
 			this.activateView();
 		});
 
-		// Add ribbon icon to open bookmarks kanban
-		this.addRibbonIcon('bookmark', 'Open Bookmarks Kanban', () => {
-			this.activateBookmarkView();
-		});
-
 		// Add command to open the view
 		this.addCommand({
 			id: 'open-kanban-4000',
 			name: 'Open Kanban 4000 Board',
 			callback: () => {
 				this.activateView();
-			}
-		});
-
-		// Add command to open bookmarks kanban
-		this.addCommand({
-			id: 'open-bookmarks-kanban',
-			name: 'Open Bookmarks Kanban',
-			callback: () => {
-				this.activateBookmarkView();
 			}
 		});
 
@@ -89,6 +74,18 @@ export default class Kanban4000Plugin extends Plugin {
 			name: 'Refresh Kanban Board',
 			callback: () => {
 				this.refreshAllViews();
+			}
+		});
+
+		// Add command to undo last Kanban action
+		this.addCommand({
+			id: 'undo-last-action',
+			name: 'Undo last Kanban action',
+			callback: async () => {
+				const success = await this.undoManager.undo();
+				if (success) {
+					this.refreshAllViews();
+				}
 			}
 		});
 
@@ -154,11 +151,18 @@ export default class Kanban4000Plugin extends Plugin {
 		return this.kanbanViewPlugin?.getCore() ?? null;
 	}
 
+	/**
+	 * Get the CoreStateSync instance for state synchronization
+	 */
+	getStateSync() {
+		return this.kanbanViewPlugin?.getStateSync() ?? null;
+	}
+
 	async onunload() {
 		// Unregister from Navigator Core if connected
 		if (this.coreConnected && window.NavigatorCore && this.kanbanViewPlugin) {
 			try {
-				(window.NavigatorCore as any).unregisterViewPlugin('kanban');
+				(window.NavigatorCore as any).unregisterViewPlugin('kanban-4000');
 			} catch (e) {
 				// Ignore errors during unload
 			}
@@ -166,7 +170,6 @@ export default class Kanban4000Plugin extends Plugin {
 
 		// Clean up views when plugin is disabled
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_KANBAN);
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_BOOKMARK_KANBAN);
 	}
 
 	async loadSettings() {
@@ -195,19 +198,9 @@ export default class Kanban4000Plugin extends Plugin {
 
 	// Refresh all open Kanban views
 	refreshAllViews() {
-		// Refresh folder kanban views
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_KANBAN);
 		for (const leaf of leaves) {
 			const view = leaf.view as KanbanView;
-			if (view && view.render) {
-				view.render();
-			}
-		}
-
-		// Refresh bookmark kanban views
-		const bookmarkLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_BOOKMARK_KANBAN);
-		for (const leaf of bookmarkLeaves) {
-			const view = leaf.view as BookmarkKanbanView;
 			if (view && view.render) {
 				view.render();
 			}
@@ -236,31 +229,6 @@ export default class Kanban4000Plugin extends Plugin {
 				type: VIEW_TYPE_KANBAN,
 				active: true,
 				state: { folderPath: targetPath }
-			});
-
-			// Focus the leaf
-			workspace.revealLeaf(leaf);
-		}
-	}
-
-	async activateBookmarkView() {
-		const { workspace } = this.app;
-
-		let leaf: WorkspaceLeaf | null = null;
-		const leaves = workspace.getLeavesOfType(VIEW_TYPE_BOOKMARK_KANBAN);
-
-		if (leaves.length > 0) {
-			// A view already exists, use it
-			leaf = leaves[0];
-		} else {
-			// Create a new leaf in the main area
-			leaf = workspace.getLeaf('tab');
-		}
-
-		if (leaf) {
-			await leaf.setViewState({
-				type: VIEW_TYPE_BOOKMARK_KANBAN,
-				active: true
 			});
 
 			// Focus the leaf

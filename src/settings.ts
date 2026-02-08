@@ -1,6 +1,6 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import Kanban4000Plugin from './main';
-import { SortOption } from './types';
+import { SortOption, SavedFilter } from './types';
 
 export interface Kanban4000Settings {
 	excludePatterns: string[];
@@ -14,6 +14,9 @@ export interface Kanban4000Settings {
 	maxTagsShown: number;
 	enableAnimations: boolean;
 	autoRefresh: boolean;
+	wrapLists: boolean;  // Grid mode - lists wrap to next row
+	savedFilters: SavedFilter[];  // User-created saved filters
+	showUndoNotifications: boolean;  // Show toast notifications with undo button
 }
 
 export const DEFAULT_SETTINGS: Kanban4000Settings = {
@@ -27,7 +30,10 @@ export const DEFAULT_SETTINGS: Kanban4000Settings = {
 	cardWidth: 280,
 	maxTagsShown: 5,
 	enableAnimations: true,
-	autoRefresh: true
+	autoRefresh: true,
+	wrapLists: false,
+	savedFilters: [],
+	showUndoNotifications: true
 };
 
 export class Kanban4000SettingTab extends PluginSettingTab {
@@ -101,6 +107,17 @@ export class Kanban4000SettingTab extends PluginSettingTab {
 				}));
 
 		containerEl.createEl('h3', { text: 'Display Options' });
+
+		// Wrap Lists (Grid Mode)
+		new Setting(containerEl)
+			.setName('Grid layout')
+			.setDesc('Wrap lists to multiple rows instead of horizontal scrolling. Useful for viewing many folders at once.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.wrapLists)
+				.onChange(async (value) => {
+					this.plugin.settings.wrapLists = value;
+					await this.plugin.saveSettings();
+				}));
 
 		// Card Width
 		new Setting(containerEl)
@@ -185,18 +202,35 @@ export class Kanban4000SettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
+		// Show Undo Notifications
+		new Setting(containerEl)
+			.setName('Show undo notifications')
+			.setDesc('Show a notification with undo button after moving or deleting files.')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.showUndoNotifications)
+				.onChange(async (value) => {
+					this.plugin.settings.showUndoNotifications = value;
+					this.plugin.undoManager.setShowNotifications(value);
+					await this.plugin.saveSettings();
+				}));
+
 		containerEl.createEl('h3', { text: 'Keyboard Shortcuts' });
 		
 		const shortcutsDiv = containerEl.createEl('div', { cls: 'kanban-shortcuts-info' });
 		shortcutsDiv.innerHTML = `
 			<p>The following keyboard shortcuts are available when the Kanban view is focused:</p>
 			<ul>
-				<li><kbd>Backspace</kbd> / <kbd>←</kbd> - Go back (zoom out)</li>
-				<li><kbd>Escape</kbd> - Clear search / Close expanded card</li>
+				<li><kbd>↑</kbd> / <kbd>↓</kbd> - Navigate between cards in a list</li>
+				<li><kbd>←</kbd> / <kbd>→</kbd> - Navigate between lists</li>
+				<li><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> - Move to next/previous list</li>
+				<li><kbd>Enter</kbd> - Open focused card</li>
+				<li><kbd>Backspace</kbd> - Go back (zoom out)</li>
+				<li><kbd>Escape</kbd> - Clear search / Close expanded card / Clear focus</li>
 				<li><kbd>/</kbd> or <kbd>Ctrl+F</kbd> - Focus search</li>
 				<li><kbd>R</kbd> - Refresh board</li>
 				<li><kbd>Home</kbd> - Go to root</li>
 			</ul>
+			<p><strong>Undo:</strong> Use the command palette to run "Undo last Kanban action" or assign a hotkey in Settings → Hotkeys.</p>
 		`;
 
 		containerEl.createEl('h3', { text: 'Bookmarks Kanban' });

@@ -1,4 +1,6 @@
 import { App, Modal, TFile, MarkdownRenderer, Notice, Component } from 'obsidian';
+import { BookmarkService } from '../BookmarkService';
+import { Icons } from './Icons';
 
 /**
  * Modal for viewing and editing markdown files
@@ -10,16 +12,22 @@ export class MarkdownEditorModal extends Modal {
 	private displayEl: HTMLElement | null = null;
 	private textareaEl: HTMLTextAreaElement | null = null;
 	private renderComponent: Component;
+	private bookmarkService: BookmarkService;
+	private bookmarkBtn: HTMLElement | null = null;
 
 	constructor(app: App, file: TFile) {
 		super(app);
 		this.file = file;
 		this.renderComponent = new Component();
+		this.bookmarkService = new BookmarkService(app);
 	}
 
 	async onOpen() {
-		const { contentEl } = this;
+		const { contentEl, modalEl } = this;
 		contentEl.addClass('kanban-md-editor-modal');
+		
+		// Add custom class for wider modal
+		modalEl.addClass('kanban-markdown-modal-wide');
 
 		// Load content
 		try {
@@ -40,6 +48,9 @@ export class MarkdownEditorModal extends Modal {
 
 		const actionsEl = header.createEl('div', { cls: 'kanban-md-modal-actions' });
 
+		// Bookmark toggle button
+		this.renderBookmarkButton(actionsEl);
+
 		// View/Edit toggle buttons
 		const viewBtn = actionsEl.createEl('button', { 
 			cls: 'kanban-md-modal-btn active',
@@ -50,9 +61,10 @@ export class MarkdownEditorModal extends Modal {
 			text: 'Edit'
 		});
 		const openBtn = actionsEl.createEl('button', { 
-			cls: 'kanban-md-modal-btn',
-			text: 'Open in Tab'
+			cls: 'kanban-md-modal-btn kanban-md-modal-open-btn',
+			attr: { 'aria-label': 'Open in new tab' }
 		});
+		openBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg> Open in Tab`;
 
 		// Content area
 		const contentArea = contentEl.createEl('div', { cls: 'kanban-md-modal-content' });
@@ -115,6 +127,30 @@ export class MarkdownEditorModal extends Modal {
 				new Notice('Saved');
 			}
 		});
+	}
+
+	/**
+	 * Render the bookmark toggle button
+	 */
+	private renderBookmarkButton(container: HTMLElement): void {
+		const isBookmarked = this.bookmarkService.isBookmarked(this.file.path);
+		
+		this.bookmarkBtn = container.createEl('button', {
+			cls: `kanban-modal-bookmark-btn ${isBookmarked ? 'is-bookmarked' : ''}`,
+			attr: { 'aria-label': isBookmarked ? 'Remove bookmark' : 'Add bookmark' }
+		});
+		this.bookmarkBtn.innerHTML = Icons.bookmark;
+		
+		this.bookmarkBtn.onclick = async () => {
+			const success = await this.bookmarkService.toggleBookmark(this.file.path);
+			if (success) {
+				const nowBookmarked = this.bookmarkService.isBookmarked(this.file.path);
+				this.bookmarkBtn?.toggleClass('is-bookmarked', nowBookmarked);
+				this.bookmarkBtn?.setAttribute('aria-label', 
+					nowBookmarked ? 'Remove bookmark' : 'Add bookmark'
+				);
+			}
+		};
 	}
 
 	private async renderPreview() {

@@ -27,6 +27,22 @@ export class CardActionHandler {
 	) {}
 
 	/**
+	 * Check if currently showing an embedded kanban view
+	 */
+	isInEmbeddedMode(): boolean {
+		return this.embeddedKanbanViewer !== null;
+	}
+
+	/**
+	 * Refresh the embedded kanban view if active
+	 */
+	async refreshEmbeddedView(): Promise<void> {
+		if (this.embeddedKanbanViewer) {
+			await this.embeddedKanbanViewer.refresh();
+		}
+	}
+
+	/**
 	 * Handle card click based on card type
 	 */
 	async handleCardClick(card: KanbanCard, contentEl: HTMLElement): Promise<void> {

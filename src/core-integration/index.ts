@@ -6,4 +6,5 @@
 export { KanbanViewPlugin } from './KanbanViewPlugin';
 export { VaultItemAdapter } from './VaultItemAdapter';
 export { CoreBoardBuilder } from './CoreBoardBuilder';
+export { CoreStateSync, applyHighlighting } from './CoreStateSync';
 export * from './types';

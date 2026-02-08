@@ -6,6 +6,7 @@ export {
 	deleteItem, 
 	copyPath, 
 	revealInNavigation,
+	RenameModal,
 	type ContextMenuCallbacks 
 } from './ContextMenu';
 
@@ -13,6 +14,7 @@ export {
 	CreateItemModal, 
 	createNewFile, 
 	createNewFolder,
+	SaveFilterModal,
 	type ItemType 
 } from './CreateItemModal';
 

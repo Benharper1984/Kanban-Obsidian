@@ -1,6 +1,6 @@
-import { App, TFile, TFolder } from 'obsidian';
+import { App, TFile, TFolder, Notice } from 'obsidian';
 import { KanbanList, KanbanCard } from '../types';
-import { Icons, getCardIcon } from '../components';
+import { Icons, getCardIcon, RenameModal } from '../components';
 import { DragDropHandler } from './DragDropHandler';
 import Kanban4000Plugin from '../main';
 
@@ -13,6 +13,7 @@ export interface BoardRendererCallbacks {
 	onTagClick: (tag: string) => Promise<void>;
 	onImagePreview: (card: KanbanCard) => void;
 	onRender: () => Promise<void>;
+	onListRename?: (listPath: string, newName: string) => Promise<boolean>;
 }
 
 /**
@@ -26,7 +27,7 @@ export class BoardRenderer {
 		private plugin: Kanban4000Plugin,
 		private callbacks: BoardRendererCallbacks
 	) {
-		this.dragDropHandler = new DragDropHandler(app, callbacks.onRender);
+		this.dragDropHandler = new DragDropHandler(app, callbacks.onRender, plugin.undoManager);
 	}
 
 	/**
@@ -112,7 +113,33 @@ export class BoardRenderer {
 		// Make header clickable to navigate into the folder (unless it's the loose files list)
 		if (!list.isLooseFiles) {
 			headerEl.addClass('kanban-list-header-clickable');
-			headerEl.onclick = () => this.callbacks.onNavigateTo(list.path);
+			
+			// Use click timing to distinguish single-click (navigate) from double-click (rename)
+			let clickTimeout: ReturnType<typeof setTimeout> | null = null;
+			
+			headerEl.onclick = () => {
+				if (clickTimeout) {
+					// This is part of a double-click, ignore
+					clearTimeout(clickTimeout);
+					clickTimeout = null;
+					return;
+				}
+				
+				clickTimeout = setTimeout(() => {
+					clickTimeout = null;
+					this.callbacks.onNavigateTo(list.path);
+				}, 250);
+			};
+			
+			headerEl.ondblclick = async (e) => {
+				if (clickTimeout) {
+					clearTimeout(clickTimeout);
+					clickTimeout = null;
+				}
+				e.preventDefault();
+				e.stopPropagation();
+				await this.handleListRename(list);
+			};
 		}
 		
 		headerEl.createEl('span', { 
@@ -147,13 +174,19 @@ export class BoardRenderer {
 	private renderCard(container: HTMLElement, card: KanbanCard, listPath: string): void {
 		const cardEl = container.createEl('div', { 
 			cls: `kanban-card kanban-card-${card.type}`,
-			attr: { 'data-path': card.path }
+			attr: { 
+				'data-path': card.path,
+				'tabindex': '0'
+			}
 		});
 
 		// Add context menu (right-click)
 		cardEl.oncontextmenu = (e) => {
 			this.callbacks.onCardContextMenu(e, card);
 		};
+
+		// Add touch support for context menu (long-press)
+		this.setupTouchContextMenu(cardEl, card);
 
 		// Make file cards draggable
 		if (card.type !== 'folder') {
@@ -338,5 +371,107 @@ export class BoardRenderer {
 				text: `+${card.kanbanLists.length - 3} more`
 			});
 		}
+	}
+
+	/**
+	 * Setup touch event handlers for long-press context menu on mobile
+	 */
+	private setupTouchContextMenu(cardEl: HTMLElement, card: KanbanCard): void {
+		let touchTimeout: ReturnType<typeof setTimeout> | null = null;
+		let touchMoved = false;
+		let touchStartX = 0;
+		let touchStartY = 0;
+		const LONG_PRESS_DURATION = 500; // ms
+		const MOVE_THRESHOLD = 10; // pixels
+
+		cardEl.ontouchstart = (e) => {
+			touchMoved = false;
+			const touch = e.touches[0];
+			touchStartX = touch.clientX;
+			touchStartY = touch.clientY;
+
+			touchTimeout = setTimeout(() => {
+				if (!touchMoved) {
+					// Prevent default tap action
+					e.preventDefault();
+					
+					// Simulate contextmenu event at touch location
+					const mouseEvent = new MouseEvent('contextmenu', {
+						clientX: touch.clientX,
+						clientY: touch.clientY,
+						bubbles: true
+					});
+					this.callbacks.onCardContextMenu(mouseEvent, card);
+					
+					// Add haptic feedback if available
+					if (navigator.vibrate) {
+						navigator.vibrate(50);
+					}
+				}
+			}, LONG_PRESS_DURATION);
+		};
+
+		cardEl.ontouchmove = (e) => {
+			if (touchTimeout) {
+				const touch = e.touches[0];
+				const deltaX = Math.abs(touch.clientX - touchStartX);
+				const deltaY = Math.abs(touch.clientY - touchStartY);
+				
+				// Cancel long-press if finger moved too much
+				if (deltaX > MOVE_THRESHOLD || deltaY > MOVE_THRESHOLD) {
+					touchMoved = true;
+					clearTimeout(touchTimeout);
+					touchTimeout = null;
+				}
+			}
+		};
+
+		cardEl.ontouchend = () => {
+			if (touchTimeout) {
+				clearTimeout(touchTimeout);
+				touchTimeout = null;
+			}
+		};
+
+		cardEl.ontouchcancel = () => {
+			if (touchTimeout) {
+				clearTimeout(touchTimeout);
+				touchTimeout = null;
+			}
+		};
+	}
+
+	/**
+	 * Handle renaming a list (folder) via double-click
+	 */
+	private async handleListRename(list: KanbanList): Promise<void> {
+		const folder = this.app.vault.getAbstractFileByPath(list.path);
+		if (!(folder instanceof TFolder)) return;
+
+		const modal = new RenameModal(this.app, list.title, async (newName) => {
+			if (!newName || newName === list.title) {
+				return;
+			}
+
+			try {
+				const parentPath = folder.parent?.path || '';
+				const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+				
+				// Create undo action if undoManager available
+				if (this.plugin.undoManager) {
+					const undoAction = this.plugin.undoManager.createRenameAction(folder, folder.path, newPath);
+					await this.app.fileManager.renameFile(folder, newPath);
+					this.plugin.undoManager.push(undoAction);
+				} else {
+					await this.app.fileManager.renameFile(folder, newPath);
+				}
+				
+				new Notice(`Renamed to "${newName}"`);
+				await this.callbacks.onRender();
+			} catch (e) {
+				new Notice(`Failed to rename: ${e}`);
+			}
+		});
+		modal.open();
 	}
 }

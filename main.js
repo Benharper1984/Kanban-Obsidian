@@ -30,7 +30,7 @@ module.exports = __toCommonJS(main_exports);
 var import_obsidian16 = require("obsidian");
 
 // src/KanbanView.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 
 // src/components/ContextMenu.ts
 var import_obsidian = require("obsidian");
@@ -75,6 +75,11 @@ var CardContextMenu = class {
     menu.addItem((item) => {
       item.setTitle("Copy path").setIcon("copy").onClick(() => this.callbacks.onCopyPath(card));
     });
+    if (import_obsidian.Platform.isDesktop) {
+      menu.addItem((item) => {
+        item.setTitle(import_obsidian.Platform.isMacOS ? "Reveal in Finder" : "Show in Explorer").setIcon("folder-open").onClick(() => this.revealInSystemExplorer(card));
+      });
+    }
   }
   buildFileMenu(menu, card) {
     menu.addItem((item) => {
@@ -98,9 +103,34 @@ var CardContextMenu = class {
     menu.addItem((item) => {
       item.setTitle("Copy path").setIcon("copy").onClick(() => this.callbacks.onCopyPath(card));
     });
+    if (import_obsidian.Platform.isDesktop) {
+      menu.addItem((item) => {
+        item.setTitle(import_obsidian.Platform.isMacOS ? "Reveal in Finder" : "Show in Explorer").setIcon("folder-open").onClick(() => this.revealInSystemExplorer(card));
+      });
+    }
+  }
+  /**
+   * Reveal file or folder in the system file explorer (Finder/Explorer)
+   */
+  revealInSystemExplorer(card) {
+    const file = card.file || card.folder;
+    if (!file)
+      return;
+    const vaultPath = this.app.vault.adapter.basePath;
+    if (!vaultPath) {
+      new import_obsidian.Notice("Cannot determine vault location");
+      return;
+    }
+    const fullPath = `${vaultPath}/${file.path}`;
+    try {
+      const { shell } = require("electron");
+      shell.showItemInFolder(fullPath);
+    } catch (e) {
+      new import_obsidian.Notice("Failed to open file explorer");
+    }
   }
 };
-async function renameItem(app, card) {
+async function renameItem(app, card, undoManager) {
   var _a, _b;
   const file = card.file || card.folder;
   if (!file)
@@ -116,9 +146,14 @@ async function renameItem(app, card) {
         return;
       }
       try {
+        const oldPath = file.path;
         const parentPath = ((_a2 = file.parent) == null ? void 0 : _a2.path) || "";
         const newPath = parentPath ? `${parentPath}/${newName}${extension}` : `${newName}${extension}`;
         await app.fileManager.renameFile(file, newPath);
+        if (undoManager) {
+          const undoAction = undoManager.createRenameAction(file, oldPath, newPath);
+          undoManager.push(undoAction);
+        }
         new import_obsidian.Notice(`Renamed to "${newName}${extension}"`);
         resolve(true);
       } catch (e) {
@@ -129,7 +164,7 @@ async function renameItem(app, card) {
     modal.open();
   });
 }
-async function deleteItem(app, card) {
+async function deleteItem(app, card, undoManager) {
   const file = card.file || card.folder;
   if (!file)
     return false;
@@ -138,7 +173,12 @@ async function deleteItem(app, card) {
   return new Promise((resolve) => {
     const modal = new ConfirmDeleteModal(app, card.title, itemType, async () => {
       try {
+        const originalPath = file.path;
         await app.vault.trash(file, true);
+        if (undoManager) {
+          const undoAction = undoManager.createDeleteAction(file, originalPath);
+          undoManager.push(undoAction);
+        }
         new import_obsidian.Notice(`Moved "${card.title}" to trash`);
         resolve(true);
       } catch (e) {
@@ -244,6 +284,7 @@ var CreateItemModal = class extends import_obsidian3.Modal {
   constructor(app, itemType, targetFolder, onSubmit) {
     super(app);
     this.name = "";
+    this.createAsKanban = false;
     this.itemType = itemType;
     this.targetFolder = targetFolder;
     this.onSubmit = onSubmit;
@@ -271,6 +312,16 @@ var CreateItemModal = class extends import_obsidian3.Modal {
         this.submit();
       }
     });
+    if (this.itemType === "file") {
+      const toggleContainer = contentEl.createEl("div", {
+        cls: "kanban-create-toggle-container"
+      });
+      new import_obsidian3.Setting(toggleContainer).setName("Create as Kanban board").setDesc("Pre-populate with kanban template").addToggle(
+        (toggle) => toggle.setValue(this.createAsKanban).onChange((value) => {
+          this.createAsKanban = value;
+        })
+      );
+    }
     const buttonContainer = contentEl.createEl("div", { cls: "kanban-modal-buttons" });
     const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
     cancelBtn.onclick = () => this.close();
@@ -287,7 +338,7 @@ var CreateItemModal = class extends import_obsidian3.Modal {
       return;
     }
     try {
-      await this.onSubmit(this.name.trim());
+      await this.onSubmit(this.name.trim(), this.createAsKanban);
       this.close();
     } catch (e) {
       new import_obsidian3.Notice(`Failed to create: ${e}`);
@@ -298,15 +349,30 @@ var CreateItemModal = class extends import_obsidian3.Modal {
     contentEl.empty();
   }
 };
-async function createNewFile(app, folder, name) {
+async function createNewFile(app, folder, name, asKanban = false) {
   const fileName = name.endsWith(".md") ? name : `${name}.md`;
   const filePath = folder.path ? `${folder.path}/${fileName}` : fileName;
   const existing = app.vault.getAbstractFileByPath(filePath);
   if (existing) {
     throw new Error("A file with this name already exists");
   }
-  const file = await app.vault.create(filePath, "");
-  new import_obsidian3.Notice(`Created "${fileName}"`);
+  let content = "";
+  if (asKanban) {
+    content = `## To Do
+
+- [ ] First task
+
+## In Progress
+
+- [ ] 
+
+## Done
+
+- [x] Example completed task
+`;
+  }
+  const file = await app.vault.create(filePath, content);
+  new import_obsidian3.Notice(`Created "${fileName}"${asKanban ? " as Kanban board" : ""}`);
   await app.workspace.getLeaf("tab").openFile(file);
 }
 async function createNewFolder(app, parentFolder, name) {
@@ -318,6 +384,56 @@ async function createNewFolder(app, parentFolder, name) {
   await app.vault.createFolder(folderPath);
   new import_obsidian3.Notice(`Created folder "${name}"`);
 }
+var SaveFilterModal = class extends import_obsidian3.Modal {
+  constructor(app, onSubmit) {
+    super(app);
+    this.name = "";
+    this.onSubmit = onSubmit;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass("kanban-create-modal");
+    contentEl.createEl("h3", { text: "Save Filter" });
+    contentEl.createEl("p", {
+      cls: "kanban-create-location",
+      text: "Save your current filter settings as a reusable preset."
+    });
+    const inputContainer = contentEl.createEl("div", { cls: "kanban-create-input-container" });
+    const input = new import_obsidian3.TextComponent(inputContainer);
+    input.setPlaceholder("Filter name");
+    input.inputEl.addClass("kanban-create-input");
+    input.onChange((value) => {
+      this.name = value;
+    });
+    input.inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.submit();
+      }
+    });
+    const buttonContainer = contentEl.createEl("div", { cls: "kanban-modal-buttons" });
+    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelBtn.onclick = () => this.close();
+    const submitBtn = buttonContainer.createEl("button", {
+      text: "Save",
+      cls: "mod-cta"
+    });
+    submitBtn.onclick = () => this.submit();
+    setTimeout(() => input.inputEl.focus(), 10);
+  }
+  submit() {
+    if (!this.name.trim()) {
+      new import_obsidian3.Notice("Please enter a name");
+      return;
+    }
+    this.onSubmit(this.name.trim());
+    this.close();
+  }
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+};
 
 // src/components/Icons.ts
 var Icons = {
@@ -348,7 +464,17 @@ var Icons = {
   // List type icons
   filesIcon: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 18v-1"/><path d="M14 18v-2"/><path d="M10 14v-1"/><path d="M14 12v-1"/></svg>`,
   // Image preview
-  expand: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>`
+  expand: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>`,
+  // Bookmark
+  bookmark: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path></svg>`,
+  // Calendar/Date icons
+  calendar: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>`,
+  // Tag icon
+  tag: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"></path><path d="M7 7h.01"></path></svg>`,
+  // Filter icon
+  filter: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>`,
+  // Check icon
+  check: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`
 };
 function getFilterIcon(iconName) {
   switch (iconName) {
@@ -362,6 +488,16 @@ function getFilterIcon(iconName) {
       return Icons.paperclip;
     case "folder":
       return Icons.folder;
+    case "bookmark":
+      return Icons.bookmark;
+    case "calendar":
+      return Icons.calendar;
+    case "tag":
+      return Icons.tag;
+    case "filter":
+      return Icons.filter;
+    case "check":
+      return Icons.check;
     default:
       return Icons.layers;
   }
@@ -380,32 +516,148 @@ function getCardIcon(type) {
 }
 
 // src/components/ImagePreviewModal.ts
+var import_obsidian5 = require("obsidian");
+
+// src/BookmarkService.ts
 var import_obsidian4 = require("obsidian");
-var ImagePreviewModal = class extends import_obsidian4.Modal {
+var BookmarkService = class {
+  constructor(app) {
+    this.app = app;
+  }
+  /**
+   * Get the bookmarks plugin instance
+   */
+  getBookmarksPlugin() {
+    var _a, _b;
+    return (_b = (_a = this.app.internalPlugins) == null ? void 0 : _a.getPluginById) == null ? void 0 : _b.call(_a, "bookmarks");
+  }
+  /**
+   * Check if bookmarks plugin is enabled
+   */
+  isBookmarksEnabled() {
+    var _a;
+    const plugin = this.getBookmarksPlugin();
+    return (_a = plugin == null ? void 0 : plugin.enabled) != null ? _a : false;
+  }
+  /**
+   * Get all bookmarks from Obsidian
+   */
+  getBookmarks() {
+    var _a, _b;
+    const plugin = this.getBookmarksPlugin();
+    if (!(plugin == null ? void 0 : plugin.enabled)) {
+      return [];
+    }
+    return (_b = (_a = plugin.instance) == null ? void 0 : _a.items) != null ? _b : [];
+  }
+  /**
+   * Get all bookmarked file/folder paths (flattened from groups)
+   */
+  getBookmarkedPaths() {
+    const paths = /* @__PURE__ */ new Set();
+    const bookmarks = this.getBookmarks();
+    this.collectPaths(bookmarks, paths);
+    return paths;
+  }
+  /**
+   * Recursively collect paths from bookmark items
+   */
+  collectPaths(items, paths) {
+    for (const item of items) {
+      if (item.path) {
+        paths.add(item.path);
+      }
+      if (item.type === "group" && item.items) {
+        this.collectPaths(item.items, paths);
+      }
+    }
+  }
+  /**
+   * Check if a path is bookmarked
+   */
+  isBookmarked(path) {
+    return this.getBookmarkedPaths().has(path);
+  }
+  /**
+   * Add a file to bookmarks
+   */
+  async addBookmark(path) {
+    const plugin = this.getBookmarksPlugin();
+    if (!(plugin == null ? void 0 : plugin.enabled) || !plugin.instance) {
+      new import_obsidian4.Notice("Bookmarks plugin is not enabled");
+      return false;
+    }
+    try {
+      await plugin.instance.addItem({ type: "file", path });
+      return true;
+    } catch (e) {
+      console.error("Failed to add bookmark:", e);
+      return false;
+    }
+  }
+  /**
+   * Remove a file from bookmarks
+   */
+  async removeBookmark(path) {
+    const plugin = this.getBookmarksPlugin();
+    if (!(plugin == null ? void 0 : plugin.enabled) || !plugin.instance) {
+      return false;
+    }
+    try {
+      const items = plugin.instance.items;
+      const item = this.findBookmarkItem(items, path);
+      if (item) {
+        await plugin.instance.removeItem(item);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error("Failed to remove bookmark:", e);
+      return false;
+    }
+  }
+  /**
+   * Toggle bookmark status
+   */
+  async toggleBookmark(path) {
+    if (this.isBookmarked(path)) {
+      return this.removeBookmark(path);
+    } else {
+      return this.addBookmark(path);
+    }
+  }
+  /**
+   * Find a bookmark item by path (recursive for groups)
+   */
+  findBookmarkItem(items, path) {
+    for (const item of items) {
+      if (item.path === path) {
+        return item;
+      }
+      if (item.type === "group" && item.items) {
+        const found = this.findBookmarkItem(item.items, path);
+        if (found)
+          return found;
+      }
+    }
+    return null;
+  }
+};
+
+// src/components/ImagePreviewModal.ts
+var ImagePreviewModal = class extends import_obsidian5.Modal {
   constructor(app, file) {
     super(app);
+    this.bookmarkBtn = null;
     this.file = file;
-    this.keyHandler = (e) => {
-      if (e.code === "Space") {
-        const target = e.target;
-        if (target.tagName !== "BUTTON" && target.tagName !== "INPUT") {
-          e.preventDefault();
-          e.stopPropagation();
-          this.close();
-        }
-      }
-    };
+    this.bookmarkService = new BookmarkService(app);
   }
   onOpen() {
-    const { contentEl, modalEl } = this;
+    const { contentEl } = this;
     contentEl.addClass("kanban-image-modal");
-    modalEl.addEventListener("keydown", this.keyHandler, true);
-    contentEl.onclick = (e) => {
-      if (e.target === contentEl) {
-        this.close();
-      }
-    };
-    contentEl.createEl("h3", { text: this.file.name });
+    const header = contentEl.createEl("div", { cls: "kanban-image-modal-header" });
+    header.createEl("h3", { text: this.file.name });
+    this.renderBookmarkButton(header);
     const imgContainer = contentEl.createEl("div", { cls: "kanban-image-modal-content" });
     imgContainer.createEl("img", {
       attr: {
@@ -419,38 +671,58 @@ var ImagePreviewModal = class extends import_obsidian4.Modal {
       await this.app.workspace.getLeaf("tab").openFile(this.file);
       this.close();
     };
-    actionsEl.createEl("span", {
-      cls: "kanban-image-modal-hint",
-      text: "Press Space or Esc to close"
+  }
+  /**
+   * Render the bookmark toggle button
+   */
+  renderBookmarkButton(container) {
+    const isBookmarked = this.bookmarkService.isBookmarked(this.file.path);
+    this.bookmarkBtn = container.createEl("button", {
+      cls: `kanban-modal-bookmark-btn ${isBookmarked ? "is-bookmarked" : ""}`,
+      attr: { "aria-label": isBookmarked ? "Remove bookmark" : "Add bookmark" }
     });
-    modalEl.focus();
+    this.bookmarkBtn.innerHTML = Icons.bookmark;
+    this.bookmarkBtn.onclick = async () => {
+      var _a, _b;
+      const success = await this.bookmarkService.toggleBookmark(this.file.path);
+      if (success) {
+        const nowBookmarked = this.bookmarkService.isBookmarked(this.file.path);
+        (_a = this.bookmarkBtn) == null ? void 0 : _a.toggleClass("is-bookmarked", nowBookmarked);
+        (_b = this.bookmarkBtn) == null ? void 0 : _b.setAttribute(
+          "aria-label",
+          nowBookmarked ? "Remove bookmark" : "Add bookmark"
+        );
+      }
+    };
   }
   onClose() {
-    this.modalEl.removeEventListener("keydown", this.keyHandler, true);
     const { contentEl } = this;
     contentEl.empty();
   }
 };
 
 // src/components/MarkdownEditorModal.ts
-var import_obsidian5 = require("obsidian");
-var MarkdownEditorModal = class extends import_obsidian5.Modal {
+var import_obsidian6 = require("obsidian");
+var MarkdownEditorModal = class extends import_obsidian6.Modal {
   constructor(app, file) {
     super(app);
     this.content = "";
     this.isEditMode = false;
     this.displayEl = null;
     this.textareaEl = null;
+    this.bookmarkBtn = null;
     this.file = file;
-    this.renderComponent = new import_obsidian5.Component();
+    this.renderComponent = new import_obsidian6.Component();
+    this.bookmarkService = new BookmarkService(app);
   }
   async onOpen() {
-    const { contentEl } = this;
+    const { contentEl, modalEl } = this;
     contentEl.addClass("kanban-md-editor-modal");
+    modalEl.addClass("kanban-markdown-modal-wide");
     try {
       this.content = await this.app.vault.read(this.file);
     } catch (e) {
-      new import_obsidian5.Notice("Failed to load file content");
+      new import_obsidian6.Notice("Failed to load file content");
       this.close();
       return;
     }
@@ -460,6 +732,7 @@ var MarkdownEditorModal = class extends import_obsidian5.Modal {
       text: this.file.basename
     });
     const actionsEl = header.createEl("div", { cls: "kanban-md-modal-actions" });
+    this.renderBookmarkButton(actionsEl);
     const viewBtn = actionsEl.createEl("button", {
       cls: "kanban-md-modal-btn active",
       text: "Preview"
@@ -469,9 +742,10 @@ var MarkdownEditorModal = class extends import_obsidian5.Modal {
       text: "Edit"
     });
     const openBtn = actionsEl.createEl("button", {
-      cls: "kanban-md-modal-btn",
-      text: "Open in Tab"
+      cls: "kanban-md-modal-btn kanban-md-modal-open-btn",
+      attr: { "aria-label": "Open in new tab" }
     });
+    openBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg> Open in Tab`;
     const contentArea = contentEl.createEl("div", { cls: "kanban-md-modal-content" });
     this.displayEl = contentArea.createEl("div", { cls: "kanban-md-modal-display" });
     this.textareaEl = contentArea.createEl("textarea", {
@@ -517,18 +791,41 @@ var MarkdownEditorModal = class extends import_obsidian5.Modal {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         await this.saveContent();
-        new import_obsidian5.Notice("Saved");
+        new import_obsidian6.Notice("Saved");
       }
     });
+  }
+  /**
+   * Render the bookmark toggle button
+   */
+  renderBookmarkButton(container) {
+    const isBookmarked = this.bookmarkService.isBookmarked(this.file.path);
+    this.bookmarkBtn = container.createEl("button", {
+      cls: `kanban-modal-bookmark-btn ${isBookmarked ? "is-bookmarked" : ""}`,
+      attr: { "aria-label": isBookmarked ? "Remove bookmark" : "Add bookmark" }
+    });
+    this.bookmarkBtn.innerHTML = Icons.bookmark;
+    this.bookmarkBtn.onclick = async () => {
+      var _a, _b;
+      const success = await this.bookmarkService.toggleBookmark(this.file.path);
+      if (success) {
+        const nowBookmarked = this.bookmarkService.isBookmarked(this.file.path);
+        (_a = this.bookmarkBtn) == null ? void 0 : _a.toggleClass("is-bookmarked", nowBookmarked);
+        (_b = this.bookmarkBtn) == null ? void 0 : _b.setAttribute(
+          "aria-label",
+          nowBookmarked ? "Remove bookmark" : "Add bookmark"
+        );
+      }
+    };
   }
   async renderPreview() {
     if (!this.displayEl)
       return;
     this.displayEl.empty();
     this.renderComponent.unload();
-    this.renderComponent = new import_obsidian5.Component();
+    this.renderComponent = new import_obsidian6.Component();
     this.renderComponent.load();
-    await import_obsidian5.MarkdownRenderer.render(
+    await import_obsidian6.MarkdownRenderer.render(
       this.app,
       this.content,
       this.displayEl,
@@ -542,7 +839,7 @@ var MarkdownEditorModal = class extends import_obsidian5.Modal {
       try {
         await this.app.vault.modify(this.file, this.content);
       } catch (e) {
-        new import_obsidian5.Notice("Failed to save file");
+        new import_obsidian6.Notice("Failed to save file");
       }
     }
   }
@@ -557,15 +854,16 @@ var MarkdownEditorModal = class extends import_obsidian5.Modal {
 };
 
 // src/components/EmbeddedKanbanViewer.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/types.ts
 var DEFAULT_SAVED_FILTERS = [
-  { id: "all", name: "All", icon: "layers", typeFilters: [] },
-  { id: "notes", name: "Notes", icon: "file-text", typeFilters: ["markdown"] },
-  { id: "images", name: "Images", icon: "image", typeFilters: ["image"] },
-  { id: "attachments", name: "Files", icon: "paperclip", typeFilters: ["attachment"] },
-  { id: "folders", name: "Folders", icon: "folder", typeFilters: ["folder"] }
+  { id: "all", name: "All", icon: "layers", typeFilters: [], isDefault: true },
+  { id: "notes", name: "Notes", icon: "file-text", typeFilters: ["markdown"], isDefault: true },
+  { id: "images", name: "Images", icon: "image", typeFilters: ["image"], isDefault: true },
+  { id: "attachments", name: "Files", icon: "paperclip", typeFilters: ["attachment"], isDefault: true },
+  { id: "folders", name: "Folders", icon: "folder", typeFilters: ["folder"], isDefault: true },
+  { id: "bookmarks", name: "Bookmarks", icon: "bookmark", typeFilters: [], isBookmarkFilter: true, isDefault: true }
 ];
 function getCardType(extension) {
   const imageExtensions = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"];
@@ -907,7 +1205,7 @@ var EmbeddedKanbanViewer = class {
       list.items.push({ text: cardText, completed: false });
       await this.render();
     } catch (e) {
-      new import_obsidian6.Notice("Failed to add card");
+      new import_obsidian7.Notice("Failed to add card");
     }
   }
   async addNewList(title) {
@@ -921,7 +1219,7 @@ var EmbeddedKanbanViewer = class {
       this.kanbanLists.push({ title, items: [] });
       await this.render();
     } catch (e) {
-      new import_obsidian6.Notice("Failed to add list");
+      new import_obsidian7.Notice("Failed to add list");
     }
   }
   async deleteItem(item, list) {
@@ -949,7 +1247,7 @@ var EmbeddedKanbanViewer = class {
         }
         await this.render();
       } catch (e) {
-        new import_obsidian6.Notice("Failed to delete card");
+        new import_obsidian7.Notice("Failed to delete card");
       }
     }
   }
@@ -973,7 +1271,7 @@ var EmbeddedKanbanViewer = class {
       try {
         await this.app.vault.modify(this.file, this.content);
       } catch (e) {
-        new import_obsidian6.Notice("Failed to save changes");
+        new import_obsidian7.Notice("Failed to save changes");
         item.completed = !completed;
       }
     }
@@ -987,13 +1285,13 @@ var EmbeddedKanbanViewer = class {
         await this.render();
       }
     } catch (e) {
-      new import_obsidian6.Notice("Failed to refresh");
+      new import_obsidian7.Notice("Failed to refresh");
     }
   }
 };
 
 // src/board/BoardBuilder.ts
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 var BoardBuilder = class {
   constructor(app, excludePatterns) {
     this.app = app;
@@ -1015,7 +1313,7 @@ var BoardBuilder = class {
         continue;
       if (this.excludePatterns.some((pattern) => child.name.toLowerCase() === pattern.toLowerCase()))
         continue;
-      if (child instanceof import_obsidian7.TFolder) {
+      if (child instanceof import_obsidian8.TFolder) {
         subfolders.push(child);
       } else {
         looseFiles.push(child);
@@ -1041,7 +1339,7 @@ var BoardBuilder = class {
           continue;
         if (this.excludePatterns.some((pattern) => item.name.toLowerCase() === pattern.toLowerCase()))
           continue;
-        if (item instanceof import_obsidian7.TFolder) {
+        if (item instanceof import_obsidian8.TFolder) {
           cards.push({
             title: item.name,
             path: item.path,
@@ -1162,12 +1460,16 @@ var BoardBuilder = class {
   }
 };
 
+// src/board/BoardRenderer.ts
+var import_obsidian10 = require("obsidian");
+
 // src/board/DragDropHandler.ts
-var import_obsidian8 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 var DragDropHandler = class {
-  constructor(app, onRefresh) {
+  constructor(app, onRefresh, undoManager) {
     this.app = app;
     this.onRefresh = onRefresh;
+    this.undoManager = undoManager;
     this.draggedCard = null;
     this.draggedElement = null;
   }
@@ -1175,6 +1477,10 @@ var DragDropHandler = class {
    * Make a card element draggable
    */
   makeCardDraggable(cardEl, card) {
+    const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice) {
+      return;
+    }
     cardEl.setAttribute("draggable", "true");
     cardEl.ondragstart = (e) => {
       var _a;
@@ -1195,32 +1501,135 @@ var DragDropHandler = class {
   setupDropZone(container, listPath) {
     container.ondragover = (e) => {
       e.preventDefault();
-      container.addClass("kanban-drop-active");
+      if (this.draggedCard || this.hasExternalFiles(e)) {
+        container.addClass("kanban-drop-active");
+      }
     };
     container.ondragleave = (e) => {
-      container.removeClass("kanban-drop-active");
+      if (!container.contains(e.relatedTarget)) {
+        container.removeClass("kanban-drop-active");
+      }
     };
     container.ondrop = async (e) => {
       e.preventDefault();
       container.removeClass("kanban-drop-active");
       if (this.draggedCard && this.draggedCard.file) {
-        const targetFolder = this.app.vault.getAbstractFileByPath(listPath);
-        if (targetFolder instanceof import_obsidian8.TFolder) {
-          const oldPath = this.draggedCard.file.path;
-          const newPath = `${listPath}/${this.draggedCard.file.name}`;
-          if (oldPath !== newPath) {
-            try {
-              await this.app.fileManager.renameFile(this.draggedCard.file, newPath);
-              await this.onRefresh();
-            } catch (err) {
-              console.error("Failed to move file:", err);
+        await this.handleInternalDrop(listPath);
+        return;
+      }
+      await this.handleExternalDrop(e, listPath);
+    };
+  }
+  /**
+   * Check if drag event contains files
+   */
+  hasExternalFiles(e) {
+    if (!e.dataTransfer)
+      return false;
+    const obsidianData = e.dataTransfer.types.includes("text/plain");
+    const hasFiles = e.dataTransfer.types.includes("Files");
+    return obsidianData || hasFiles;
+  }
+  /**
+   * Handle internal card being dropped
+   */
+  async handleInternalDrop(listPath) {
+    var _a, _b;
+    if (!((_a = this.draggedCard) == null ? void 0 : _a.file))
+      return;
+    const targetFolder = this.app.vault.getAbstractFileByPath(listPath);
+    if (!(targetFolder instanceof import_obsidian9.TFolder))
+      return;
+    const oldPath = this.draggedCard.file.path;
+    const newPath = `${listPath}/${this.draggedCard.file.name}`;
+    if (oldPath !== newPath) {
+      try {
+        const undoAction = (_b = this.undoManager) == null ? void 0 : _b.createMoveAction(
+          this.draggedCard.file,
+          oldPath,
+          newPath
+        );
+        await this.app.fileManager.renameFile(this.draggedCard.file, newPath);
+        if (undoAction && this.undoManager) {
+          this.undoManager.push(undoAction);
+        }
+        await this.onRefresh();
+      } catch (err) {
+        new import_obsidian9.Notice(`Failed to move file: ${err}`);
+      }
+    }
+    this.draggedCard = null;
+    this.draggedElement = null;
+  }
+  /**
+   * Handle external file being dropped
+   */
+  async handleExternalDrop(e, listPath) {
+    var _a, _b, _c, _d;
+    const targetFolder = this.app.vault.getAbstractFileByPath(listPath);
+    if (!(targetFolder instanceof import_obsidian9.TFolder))
+      return;
+    const obsidianPath = (_a = e.dataTransfer) == null ? void 0 : _a.getData("text/plain");
+    if (obsidianPath) {
+      const file = this.app.vault.getAbstractFileByPath(obsidianPath);
+      if (file instanceof import_obsidian9.TFile) {
+        const oldPath = file.path;
+        const newPath = `${listPath}/${file.name}`;
+        if (oldPath !== newPath) {
+          try {
+            const undoAction = (_b = this.undoManager) == null ? void 0 : _b.createMoveAction(file, oldPath, newPath);
+            await this.app.fileManager.renameFile(file, newPath);
+            if (undoAction && this.undoManager) {
+              this.undoManager.push(undoAction);
             }
+            await this.onRefresh();
+          } catch (err) {
+            new import_obsidian9.Notice(`Failed to move file: ${err}`);
           }
         }
+        return;
+      } else if (file instanceof import_obsidian9.TFolder) {
+        const oldPath = file.path;
+        const newPath = `${listPath}/${file.name}`;
+        if (oldPath !== newPath && !newPath.startsWith(file.path + "/")) {
+          try {
+            const undoAction = (_c = this.undoManager) == null ? void 0 : _c.createMoveAction(file, oldPath, newPath);
+            await this.app.fileManager.renameFile(file, newPath);
+            if (undoAction && this.undoManager) {
+              this.undoManager.push(undoAction);
+            }
+            await this.onRefresh();
+          } catch (err) {
+            new import_obsidian9.Notice(`Failed to move folder: ${err}`);
+          }
+        }
+        return;
       }
-      this.draggedCard = null;
-      this.draggedElement = null;
-    };
+    }
+    const files = (_d = e.dataTransfer) == null ? void 0 : _d.files;
+    if (files && files.length > 0) {
+      let imported = 0;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const newPath = `${listPath}/${file.name}`;
+          const existing = this.app.vault.getAbstractFileByPath(newPath);
+          if (existing) {
+            new import_obsidian9.Notice(`File "${file.name}" already exists in target folder`);
+            continue;
+          }
+          await this.app.vault.createBinary(newPath, arrayBuffer);
+          imported++;
+        } catch (err) {
+          new import_obsidian9.Notice(`Failed to import ${file.name}: ${err}`);
+        }
+      }
+      if (imported > 0) {
+        new import_obsidian9.Notice(`Imported ${imported} file${imported > 1 ? "s" : ""}`);
+        await this.onRefresh();
+      }
+    }
   }
   /**
    * Get the currently dragged card
@@ -1242,7 +1651,7 @@ var BoardRenderer = class {
     this.app = app;
     this.plugin = plugin;
     this.callbacks = callbacks;
-    this.dragDropHandler = new DragDropHandler(app, callbacks.onRender);
+    this.dragDropHandler = new DragDropHandler(app, callbacks.onRender, plugin.undoManager);
   }
   /**
    * Render the kanban board with all lists
@@ -1307,7 +1716,27 @@ var BoardRenderer = class {
     }
     if (!list.isLooseFiles) {
       headerEl.addClass("kanban-list-header-clickable");
-      headerEl.onclick = () => this.callbacks.onNavigateTo(list.path);
+      let clickTimeout = null;
+      headerEl.onclick = () => {
+        if (clickTimeout) {
+          clearTimeout(clickTimeout);
+          clickTimeout = null;
+          return;
+        }
+        clickTimeout = setTimeout(() => {
+          clickTimeout = null;
+          this.callbacks.onNavigateTo(list.path);
+        }, 250);
+      };
+      headerEl.ondblclick = async (e) => {
+        if (clickTimeout) {
+          clearTimeout(clickTimeout);
+          clickTimeout = null;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        await this.handleListRename(list);
+      };
     }
     headerEl.createEl("span", {
       cls: "kanban-list-count",
@@ -1333,11 +1762,15 @@ var BoardRenderer = class {
   renderCard(container, card, listPath) {
     const cardEl = container.createEl("div", {
       cls: `kanban-card kanban-card-${card.type}`,
-      attr: { "data-path": card.path }
+      attr: {
+        "data-path": card.path,
+        "tabindex": "0"
+      }
     });
     cardEl.oncontextmenu = (e) => {
       this.callbacks.onCardContextMenu(e, card);
     };
+    this.setupTouchContextMenu(cardEl, card);
     if (card.type !== "folder") {
       this.dragDropHandler.makeCardDraggable(cardEl, card);
     }
@@ -1482,6 +1915,91 @@ var BoardRenderer = class {
       });
     }
   }
+  /**
+   * Setup touch event handlers for long-press context menu on mobile
+   */
+  setupTouchContextMenu(cardEl, card) {
+    let touchTimeout = null;
+    let touchMoved = false;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const LONG_PRESS_DURATION = 500;
+    const MOVE_THRESHOLD = 10;
+    cardEl.ontouchstart = (e) => {
+      touchMoved = false;
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+      touchTimeout = setTimeout(() => {
+        if (!touchMoved) {
+          e.preventDefault();
+          const mouseEvent = new MouseEvent("contextmenu", {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true
+          });
+          this.callbacks.onCardContextMenu(mouseEvent, card);
+          if (navigator.vibrate) {
+            navigator.vibrate(50);
+          }
+        }
+      }, LONG_PRESS_DURATION);
+    };
+    cardEl.ontouchmove = (e) => {
+      if (touchTimeout) {
+        const touch = e.touches[0];
+        const deltaX = Math.abs(touch.clientX - touchStartX);
+        const deltaY = Math.abs(touch.clientY - touchStartY);
+        if (deltaX > MOVE_THRESHOLD || deltaY > MOVE_THRESHOLD) {
+          touchMoved = true;
+          clearTimeout(touchTimeout);
+          touchTimeout = null;
+        }
+      }
+    };
+    cardEl.ontouchend = () => {
+      if (touchTimeout) {
+        clearTimeout(touchTimeout);
+        touchTimeout = null;
+      }
+    };
+    cardEl.ontouchcancel = () => {
+      if (touchTimeout) {
+        clearTimeout(touchTimeout);
+        touchTimeout = null;
+      }
+    };
+  }
+  /**
+   * Handle renaming a list (folder) via double-click
+   */
+  async handleListRename(list) {
+    const folder = this.app.vault.getAbstractFileByPath(list.path);
+    if (!(folder instanceof import_obsidian10.TFolder))
+      return;
+    const modal = new RenameModal(this.app, list.title, async (newName) => {
+      var _a;
+      if (!newName || newName === list.title) {
+        return;
+      }
+      try {
+        const parentPath = ((_a = folder.parent) == null ? void 0 : _a.path) || "";
+        const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+        if (this.plugin.undoManager) {
+          const undoAction = this.plugin.undoManager.createRenameAction(folder, folder.path, newPath);
+          await this.app.fileManager.renameFile(folder, newPath);
+          this.plugin.undoManager.push(undoAction);
+        } else {
+          await this.app.fileManager.renameFile(folder, newPath);
+        }
+        new import_obsidian10.Notice(`Renamed to "${newName}"`);
+        await this.callbacks.onRender();
+      } catch (e) {
+        new import_obsidian10.Notice(`Failed to rename: ${e}`);
+      }
+    });
+    modal.open();
+  }
 };
 
 // src/board/ToolbarRenderer.ts
@@ -1489,6 +2007,59 @@ var ToolbarRenderer = class {
   constructor(callbacks) {
     this.callbacks = callbacks;
     this.searchInputEl = null;
+    this.availableTags = [];
+    this.activeDropdown = null;
+    this.documentClickHandler = null;
+    // Track which dropdown type should remain open across re-renders
+    this.keepDropdownOpen = null;
+  }
+  /**
+   * Set available tags for the tag filter dropdown
+   */
+  setAvailableTags(tags) {
+    this.availableTags = tags;
+  }
+  /**
+   * Close any open dropdown
+   */
+  closeActiveDropdown() {
+    if (this.activeDropdown) {
+      this.activeDropdown.style.display = "none";
+      this.activeDropdown = null;
+    }
+    if (this.documentClickHandler) {
+      document.removeEventListener("click", this.documentClickHandler);
+      this.documentClickHandler = null;
+    }
+  }
+  /**
+   * Open a dropdown and set up close handler
+   */
+  openDropdown(dropdown, container) {
+    this.closeActiveDropdown();
+    dropdown.style.display = "block";
+    this.activeDropdown = dropdown;
+    this.documentClickHandler = (e) => {
+      if (!container.contains(e.target)) {
+        this.closeActiveDropdown();
+      }
+    };
+    setTimeout(() => {
+      if (this.documentClickHandler) {
+        document.addEventListener("click", this.documentClickHandler);
+      }
+    }, 0);
+  }
+  /**
+   * Toggle a dropdown
+   */
+  toggleDropdown(dropdown, container) {
+    const isHidden = dropdown.style.display === "none" || dropdown.style.display === "";
+    if (isHidden) {
+      this.openDropdown(dropdown, container);
+    } else {
+      this.closeActiveDropdown();
+    }
   }
   /**
    * Get the search input element (for focus)
@@ -1507,7 +2078,7 @@ var ToolbarRenderer = class {
   /**
    * Render the header with navigation breadcrumbs
    */
-  renderHeader(container, folder, state) {
+  renderHeader(container, folder, state, itemCount) {
     const header = container.createEl("div", { cls: "kanban-header" });
     if (state.history.length > 0) {
       const backBtn = header.createEl("button", {
@@ -1517,31 +2088,39 @@ var ToolbarRenderer = class {
       backBtn.innerHTML = Icons.back;
       backBtn.onclick = () => this.callbacks.onNavigateBack();
     }
-    this.renderBreadcrumbs(header, state.currentPath);
+    this.renderBreadcrumbs(header, state.currentPath, itemCount);
   }
   /**
-   * Render breadcrumb navigation
+   * Render breadcrumb navigation with optional item count
    */
-  renderBreadcrumbs(header, currentPath) {
+  renderBreadcrumbs(header, currentPath, itemCount) {
     const breadcrumbs = header.createEl("div", { cls: "kanban-breadcrumbs" });
-    const rootCrumb = breadcrumbs.createEl("span", {
-      cls: "kanban-breadcrumb",
-      text: "\u{1F3E0} Vault"
-    });
+    const rootCrumb = breadcrumbs.createEl("span", { cls: "kanban-breadcrumb" });
+    rootCrumb.createEl("span", { text: "\u{1F3E0} Vault" });
+    if (currentPath === "/" && itemCount !== void 0) {
+      rootCrumb.createEl("span", {
+        cls: "kanban-breadcrumb-count",
+        text: ` (${itemCount})`
+      });
+    }
     rootCrumb.onclick = () => this.callbacks.onNavigateToBreadcrumb(0);
     if (currentPath !== "/") {
       const parts = currentPath.split("/").filter((p) => p);
       for (let i = 0; i < parts.length; i++) {
         breadcrumbs.createEl("span", { cls: "kanban-breadcrumb-separator", text: " / " });
-        const crumb = breadcrumbs.createEl("span", {
-          cls: "kanban-breadcrumb",
-          text: parts[i]
-        });
+        const crumb = breadcrumbs.createEl("span", { cls: "kanban-breadcrumb" });
+        crumb.createEl("span", { text: parts[i] });
         if (i < parts.length - 1) {
           const crumbIndex = i + 1;
           crumb.onclick = () => this.callbacks.onNavigateToBreadcrumb(crumbIndex);
         } else {
           crumb.addClass("kanban-breadcrumb-current");
+          if (itemCount !== void 0) {
+            crumb.createEl("span", {
+              cls: "kanban-breadcrumb-count",
+              text: ` (${itemCount})`
+            });
+          }
         }
       }
     }
@@ -1549,11 +2128,20 @@ var ToolbarRenderer = class {
   /**
    * Render the search and sort toolbar
    */
-  renderToolbar(container, state) {
+  renderToolbar(container, state, savedFilters = []) {
     const toolbar = container.createEl("div", { cls: "kanban-toolbar" });
-    this.renderFilterChips(toolbar, state);
-    this.renderSearchInput(toolbar, state.searchQuery);
-    this.renderSortControls(toolbar, state);
+    const filterSection = toolbar.createEl("div", { cls: "kanban-filter-section" });
+    this.renderFilterChips(filterSection, state);
+    this.renderSavedFilterChips(filterSection, state, savedFilters);
+    const saveFilterPlaceholder = filterSection.createEl("div", { cls: "kanban-save-filter-placeholder" });
+    filterSection.createEl("div", { cls: "kanban-filter-spacer" });
+    this.renderTagFilter(filterSection, state);
+    this.renderDateFilter(filterSection, state);
+    const secondaryRow = toolbar.createEl("div", { cls: "kanban-toolbar-secondary" });
+    this.renderSearchInput(secondaryRow, state.searchQuery);
+    this.renderSaveFilterButton(saveFilterPlaceholder, state);
+    this.renderSortControls(secondaryRow, state);
+    this.renderFilterIndicator(secondaryRow, state);
   }
   /**
    * Render filter chips for quick type filtering
@@ -1561,7 +2149,7 @@ var ToolbarRenderer = class {
   renderFilterChips(toolbar, state) {
     const filtersContainer = toolbar.createEl("div", { cls: "kanban-filters" });
     for (const filter of DEFAULT_SAVED_FILTERS) {
-      const isActive = this.isFilterActive(filter, state.typeFilters);
+      const isActive = this.isFilterActive(filter, state);
       const chip = filtersContainer.createEl("button", {
         cls: `kanban-filter-chip ${isActive ? "kanban-filter-chip-active" : ""}`,
         attr: { "aria-label": `Filter: ${filter.name}` }
@@ -1574,20 +2162,337 @@ var ToolbarRenderer = class {
         cls: "kanban-filter-chip-label",
         text: filter.name
       });
-      chip.onclick = () => this.callbacks.onTypeFilterChange(filter.typeFilters);
+      if (filter.isBookmarkFilter) {
+        chip.onclick = async () => {
+          await this.callbacks.onBookmarkFilterToggle(!state.showBookmarksOnly);
+        };
+      } else {
+        chip.onclick = async () => {
+          if (state.showBookmarksOnly) {
+            await this.callbacks.onBookmarkFilterToggle(false);
+          }
+          await this.callbacks.onTypeFilterChange(filter.typeFilters);
+        };
+      }
     }
+  }
+  /**
+   * Render user-saved filter chips
+   */
+  renderSavedFilterChips(container, state, savedFilters) {
+    for (const filter of savedFilters) {
+      if (filter.isDefault)
+        continue;
+      const isActive = this.isSavedFilterActive(filter, state);
+      const chip = container.createEl("button", {
+        cls: `kanban-filter-chip kanban-filter-chip-saved ${isActive ? "kanban-filter-chip-active" : ""}`,
+        attr: { "aria-label": `Saved filter: ${filter.name}` }
+      });
+      chip.createEl("span", {
+        cls: "kanban-filter-chip-label",
+        text: filter.name
+      });
+      const deleteBtn = chip.createEl("span", {
+        cls: "kanban-filter-chip-delete",
+        attr: { "aria-label": "Delete filter" }
+      });
+      deleteBtn.innerHTML = Icons.close;
+      deleteBtn.onclick = (e) => {
+        var _a, _b;
+        e.stopPropagation();
+        (_b = (_a = this.callbacks).onDeleteSavedFilter) == null ? void 0 : _b.call(_a, filter.id);
+      };
+      chip.onclick = () => {
+        var _a, _b;
+        return (_b = (_a = this.callbacks).onApplySavedFilter) == null ? void 0 : _b.call(_a, filter);
+      };
+    }
+  }
+  /**
+   * Render save filter button
+   */
+  renderSaveFilterButton(container, state) {
+    const hasFilters = state.typeFilters.length > 0 || state.tagFilters.length > 0 || state.dateFilter || state.showBookmarksOnly || state.searchQuery;
+    const saveBtn = container.createEl("button", {
+      cls: `kanban-save-filter-btn ${hasFilters ? "" : "kanban-save-filter-btn-disabled"}`,
+      attr: {
+        "aria-label": "Save current filters",
+        "title": "Save current filter"
+      }
+    });
+    saveBtn.innerHTML = Icons.plus;
+    saveBtn.onclick = () => {
+      var _a, _b, _c;
+      const currentSearchQuery = ((_a = this.searchInputEl) == null ? void 0 : _a.value) || state.searchQuery;
+      const currentHasFilters = state.typeFilters.length > 0 || state.tagFilters.length > 0 || state.dateFilter || state.showBookmarksOnly || currentSearchQuery;
+      if (currentHasFilters) {
+        (_c = (_b = this.callbacks).onSaveFilter) == null ? void 0 : _c.call(_b);
+      }
+    };
+    if (this.searchInputEl) {
+      const updateButtonState = () => {
+        var _a;
+        const currentSearchQuery = ((_a = this.searchInputEl) == null ? void 0 : _a.value) || "";
+        const currentHasFilters = state.typeFilters.length > 0 || state.tagFilters.length > 0 || state.dateFilter || state.showBookmarksOnly || currentSearchQuery;
+        if (currentHasFilters) {
+          saveBtn.removeClass("kanban-save-filter-btn-disabled");
+        } else {
+          saveBtn.addClass("kanban-save-filter-btn-disabled");
+        }
+      };
+      this.searchInputEl.addEventListener("input", updateButtonState);
+    }
+  }
+  /**
+   * Check if a saved filter matches the current state
+   */
+  isSavedFilterActive(filter, state) {
+    const typeMatch = JSON.stringify((filter.typeFilters || []).sort()) === JSON.stringify(state.typeFilters.sort());
+    const tagMatch = JSON.stringify((filter.tagFilters || []).sort()) === JSON.stringify(state.tagFilters.sort());
+    const tagModeMatch = (filter.tagFilterMode || "any") === state.tagFilterMode;
+    const dateMatch = JSON.stringify(filter.dateFilter) === JSON.stringify(state.dateFilter);
+    const searchMatch = (filter.searchQuery || "") === state.searchQuery;
+    return typeMatch && tagMatch && tagModeMatch && dateMatch && searchMatch;
   }
   /**
    * Check if a filter matches the current state
    */
-  isFilterActive(filter, currentFilters) {
-    if (filter.typeFilters.length === 0 && currentFilters.length === 0) {
-      return true;
+  isFilterActive(filter, state) {
+    if (filter.isBookmarkFilter) {
+      return state.showBookmarksOnly;
     }
-    if (filter.typeFilters.length !== currentFilters.length) {
+    if (state.showBookmarksOnly) {
       return false;
     }
-    return filter.typeFilters.every((t) => currentFilters.includes(t));
+    if (filter.typeFilters.length === 0) {
+      return state.typeFilters.length === 0 && state.tagFilters.length === 0 && !state.dateFilter && !state.searchQuery;
+    }
+    if (filter.typeFilters.length !== state.typeFilters.length) {
+      return false;
+    }
+    return filter.typeFilters.every((t) => state.typeFilters.includes(t));
+  }
+  /**
+   * Count active filters for indicator
+   */
+  countActiveFilters(state) {
+    let count = 0;
+    if (state.typeFilters.length > 0)
+      count++;
+    if (state.tagFilters.length > 0)
+      count++;
+    if (state.dateFilter)
+      count++;
+    if (state.showBookmarksOnly)
+      count++;
+    if (state.searchQuery)
+      count++;
+    return count;
+  }
+  /**
+   * Render filter indicator with count and clear button
+   */
+  renderFilterIndicator(toolbar, state) {
+    const activeCount = this.countActiveFilters(state);
+    if (activeCount === 0)
+      return;
+    const indicator = toolbar.createEl("div", { cls: "kanban-filter-indicator" });
+    const badge = indicator.createEl("span", {
+      cls: "kanban-filter-badge",
+      text: `${activeCount} filter${activeCount > 1 ? "s" : ""}`
+    });
+    const clearBtn = indicator.createEl("button", {
+      cls: "kanban-filter-clear-btn",
+      attr: { "aria-label": "Clear all filters" }
+    });
+    clearBtn.innerHTML = Icons.close;
+    clearBtn.createEl("span", { text: "Clear" });
+    clearBtn.onclick = () => this.callbacks.onClearAllFilters();
+  }
+  /**
+   * Render tag filter dropdown
+   */
+  renderTagFilter(toolbar, state) {
+    const container = toolbar.createEl("div", { cls: "kanban-tag-filter" });
+    const hasActiveTagFilter = state.tagFilters.length > 0;
+    const btn = container.createEl("button", {
+      cls: `kanban-dropdown-btn ${hasActiveTagFilter ? "kanban-dropdown-btn-active" : ""}`,
+      attr: { "aria-label": "Filter by tags" }
+    });
+    const iconEl = btn.createEl("span", { cls: "kanban-dropdown-icon" });
+    iconEl.innerHTML = Icons.tag;
+    btn.createEl("span", { text: "Tags" });
+    if (hasActiveTagFilter) {
+      btn.createEl("span", { cls: "kanban-dropdown-count", text: `(${state.tagFilters.length})` });
+    }
+    btn.createEl("span", { cls: "kanban-dropdown-chevron" }).innerHTML = Icons.chevronDown;
+    const dropdown = container.createEl("div", { cls: "kanban-dropdown-panel" });
+    dropdown.style.display = "none";
+    const modeContainer = dropdown.createEl("div", { cls: "kanban-tag-mode" });
+    modeContainer.createEl("span", { text: "Match:" });
+    const anyBtn = modeContainer.createEl("button", {
+      cls: `kanban-mode-btn ${state.tagFilterMode === "any" ? "kanban-mode-btn-active" : ""}`,
+      text: "Any"
+    });
+    const allBtn = modeContainer.createEl("button", {
+      cls: `kanban-mode-btn ${state.tagFilterMode === "all" ? "kanban-mode-btn-active" : ""}`,
+      text: "All"
+    });
+    anyBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.keepDropdownOpen = "tag";
+      this.callbacks.onTagFilterChange(state.tagFilters, "any");
+    };
+    allBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.keepDropdownOpen = "tag";
+      this.callbacks.onTagFilterChange(state.tagFilters, "all");
+    };
+    const tagList = dropdown.createEl("div", { cls: "kanban-tag-list" });
+    if (this.availableTags.length === 0) {
+      tagList.createEl("div", { cls: "kanban-tag-empty", text: "No tags found" });
+    } else {
+      for (const tag of this.availableTags) {
+        const isSelected = state.tagFilters.includes(tag);
+        const tagItem = tagList.createEl("div", {
+          cls: `kanban-tag-item ${isSelected ? "kanban-tag-item-selected" : ""}`
+        });
+        const checkbox = tagItem.createEl("span", { cls: "kanban-tag-checkbox" });
+        if (isSelected) {
+          checkbox.innerHTML = Icons.check;
+        }
+        tagItem.createEl("span", { cls: "kanban-tag-name", text: `#${tag}` });
+        tagItem.onclick = (e) => {
+          e.stopPropagation();
+          this.keepDropdownOpen = "tag";
+          const newTags = isSelected ? state.tagFilters.filter((t) => t !== tag) : [...state.tagFilters, tag];
+          this.callbacks.onTagFilterChange(newTags, state.tagFilterMode);
+        };
+      }
+    }
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      this.keepDropdownOpen = null;
+      this.toggleDropdown(dropdown, container);
+    };
+    if (this.keepDropdownOpen === "tag") {
+      this.openDropdown(dropdown, container);
+      this.keepDropdownOpen = null;
+    }
+  }
+  /**
+   * Render date filter dropdown
+   */
+  renderDateFilter(toolbar, state) {
+    var _a, _b, _c;
+    const container = toolbar.createEl("div", { cls: "kanban-date-filter" });
+    const hasActiveDateFilter = !!state.dateFilter;
+    const btn = container.createEl("button", {
+      cls: `kanban-dropdown-btn ${hasActiveDateFilter ? "kanban-dropdown-btn-active" : ""}`,
+      attr: { "aria-label": "Filter by date" }
+    });
+    const iconEl = btn.createEl("span", { cls: "kanban-dropdown-icon" });
+    iconEl.innerHTML = Icons.calendar;
+    btn.createEl("span", { text: "Date" });
+    if (hasActiveDateFilter && ((_a = state.dateFilter) == null ? void 0 : _a.preset)) {
+      btn.createEl("span", { cls: "kanban-dropdown-count", text: `(${this.getPresetLabel(state.dateFilter.preset)})` });
+    }
+    btn.createEl("span", { cls: "kanban-dropdown-chevron" }).innerHTML = Icons.chevronDown;
+    const dropdown = container.createEl("div", { cls: "kanban-dropdown-panel" });
+    dropdown.style.display = "none";
+    const fieldContainer = dropdown.createEl("div", { cls: "kanban-date-field" });
+    fieldContainer.createEl("span", { text: "By:" });
+    const currentField = ((_b = state.dateFilter) == null ? void 0 : _b.field) || "modified";
+    const createdBtn = fieldContainer.createEl("button", {
+      cls: `kanban-mode-btn ${currentField === "created" ? "kanban-mode-btn-active" : ""}`,
+      text: "Created"
+    });
+    const modifiedBtn = fieldContainer.createEl("button", {
+      cls: `kanban-mode-btn ${currentField === "modified" ? "kanban-mode-btn-active" : ""}`,
+      text: "Modified"
+    });
+    createdBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (state.dateFilter) {
+        this.keepDropdownOpen = "date";
+        this.callbacks.onDateFilterChange({ ...state.dateFilter, field: "created" });
+      }
+    };
+    modifiedBtn.onclick = (e) => {
+      e.stopPropagation();
+      if (state.dateFilter) {
+        this.keepDropdownOpen = "date";
+        this.callbacks.onDateFilterChange({ ...state.dateFilter, field: "modified" });
+      }
+    };
+    const presets = [
+      { value: "today", label: "Today" },
+      { value: "yesterday", label: "Yesterday" },
+      { value: "week", label: "This Week" },
+      { value: "month", label: "This Month" },
+      { value: "year", label: "This Year" }
+    ];
+    const presetList = dropdown.createEl("div", { cls: "kanban-date-presets" });
+    for (const preset of presets) {
+      const isSelected = ((_c = state.dateFilter) == null ? void 0 : _c.preset) === preset.value;
+      const presetItem = presetList.createEl("div", {
+        cls: `kanban-preset-item ${isSelected ? "kanban-preset-item-selected" : ""}`
+      });
+      if (isSelected) {
+        const check = presetItem.createEl("span", { cls: "kanban-preset-check" });
+        check.innerHTML = Icons.check;
+      }
+      presetItem.createEl("span", { text: preset.label });
+      presetItem.onclick = (e) => {
+        e.stopPropagation();
+        if (isSelected) {
+          this.callbacks.onDateFilterChange(void 0);
+        } else {
+          this.callbacks.onDateFilterChange({
+            field: currentField,
+            preset: preset.value
+          });
+        }
+        this.closeActiveDropdown();
+      };
+    }
+    if (hasActiveDateFilter) {
+      const clearItem = presetList.createEl("div", { cls: "kanban-preset-item kanban-preset-clear" });
+      clearItem.createEl("span", { text: "Clear date filter" });
+      clearItem.onclick = (e) => {
+        e.stopPropagation();
+        this.callbacks.onDateFilterChange(void 0);
+        this.closeActiveDropdown();
+      };
+    }
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      this.keepDropdownOpen = null;
+      this.toggleDropdown(dropdown, container);
+    };
+    if (this.keepDropdownOpen === "date") {
+      this.openDropdown(dropdown, container);
+      this.keepDropdownOpen = null;
+    }
+  }
+  /**
+   * Get human-readable label for date preset
+   */
+  getPresetLabel(preset) {
+    switch (preset) {
+      case "today":
+        return "Today";
+      case "yesterday":
+        return "Yesterday";
+      case "week":
+        return "Week";
+      case "month":
+        return "Month";
+      case "year":
+        return "Year";
+      default:
+        return preset;
+    }
   }
   /**
    * Render the search input
@@ -1661,13 +2566,27 @@ var ToolbarRenderer = class {
 };
 
 // src/board/CardActionHandler.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 var CardActionHandler = class {
   constructor(app, callbacks) {
     this.app = app;
     this.callbacks = callbacks;
     this.embeddedKanbanCard = null;
     this.embeddedKanbanViewer = null;
+  }
+  /**
+   * Check if currently showing an embedded kanban view
+   */
+  isInEmbeddedMode() {
+    return this.embeddedKanbanViewer !== null;
+  }
+  /**
+   * Refresh the embedded kanban view if active
+   */
+  async refreshEmbeddedView() {
+    if (this.embeddedKanbanViewer) {
+      await this.embeddedKanbanViewer.refresh();
+    }
   }
   /**
    * Handle card click based on card type
@@ -1797,7 +2716,7 @@ var ModalHandler = class {
    */
   showCreateFileModalInFolder(folderPath) {
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!folder || !(folder instanceof import_obsidian9.TFolder))
+    if (!folder || !(folder instanceof import_obsidian11.TFolder))
       return;
     const modal = new CreateItemModal(
       this.app,
@@ -1812,230 +2731,194 @@ var ModalHandler = class {
   }
 };
 
-// src/core-integration/KanbanViewPlugin.ts
-var KanbanViewPlugin = class {
-  constructor(plugin) {
-    this.manifest = {
-      id: "kanban",
-      name: "Kanban Board",
-      icon: "layout-dashboard",
-      description: "View vault items as a kanban board organized by folders"
-    };
+// src/core-integration/CoreStateSync.ts
+var CoreStateSync = class {
+  constructor() {
     this.core = null;
-    this.highlightedItems = [];
-    this.plugin = plugin;
+    this.unsubscribe = null;
+    this.stateCallbacks = /* @__PURE__ */ new Set();
+    this.lastKnownState = null;
   }
   /**
-   * Called when registered with Navigator Core
+   * Connect to Navigator Core
    */
-  onRegister(core) {
+  connect(core) {
+    this.disconnect();
     this.core = core;
-    console.log("Kanban 4000: Registered with Navigator Core");
-    core.on("state-change", (payload) => {
-      const { current } = payload;
-      if (current.focusedItem) {
-        this.highlightedItems = [current.focusedItem, ...current.selectedItems];
-      } else {
-        this.highlightedItems = [...current.selectedItems];
-      }
+    this.unsubscribe = core.on("state-change", (payload) => {
+      this.lastKnownState = payload.current;
+      this.notifyStateChange(payload.current);
     });
+    this.lastKnownState = core.getSharedState();
   }
   /**
-   * Called when unregistered from Navigator Core
+   * Disconnect from Navigator Core
    */
-  onUnregister() {
+  disconnect() {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
     this.core = null;
-    this.highlightedItems = [];
-    console.log("Kanban 4000: Unregistered from Navigator Core");
+    this.lastKnownState = null;
   }
   /**
-   * Create a view instance - returns a KanbanNavigatorView wrapper
+   * Check if connected to core
    */
-  createView(leaf) {
-    return new KanbanNavigatorView(leaf, this.plugin, this.core);
+  isConnected() {
+    return this.core !== null;
   }
   /**
-   * Declare required metadata types
-   */
-  requiredMetadata() {
-    return ["tags", "links"];
-  }
-  /**
-   * Check if kanban can display an item
-   */
-  canDisplayItem(item) {
-    return item.type === "file" || item.type === "folder";
-  }
-  /**
-   * Get currently highlighted items for cross-view sync
-   */
-  getHighlightedItems() {
-    return this.highlightedItems;
-  }
-  /**
-   * Get reference to Navigator Core
+   * Get current Navigator Core reference
    */
   getCore() {
     return this.core;
   }
-};
-var KanbanNavigatorView = class {
-  constructor(leaf, plugin, core) {
-    this.containerEl = null;
-    this.currentPath = "/";
-    this.currentState = null;
-    this.leaf = leaf;
-    this.plugin = plugin;
-    this.core = core;
-  }
   /**
-   * Render items with current state
+   * Subscribe to state changes
    */
-  render(items, state) {
-    this.currentState = state;
-    if (this.containerEl) {
-      this.renderBoard(items, state);
-    }
-  }
-  /**
-   * Render the kanban board
-   */
-  renderBoard(items, state) {
-  }
-  /**
-   * Handle item selection
-   */
-  onItemSelect(path) {
-    if (this.core) {
-      this.core.updateSharedState({
-        focusedItem: path
-      });
-    }
-  }
-  /**
-   * Handle filter changes
-   */
-  onFilterChange(filters) {
-    if (this.core) {
-      this.core.updateFilters(filters);
-    }
-  }
-  /**
-   * Get current view state
-   */
-  getState() {
-    return this.currentState || {
-      focusedItem: void 0,
-      selectedItems: [],
-      filters: {
-        search: "",
-        tags: [],
-        fileTypes: []
-      },
-      viewSpecific: {
-        currentPath: this.currentPath
-      }
+  onStateChange(callback) {
+    this.stateCallbacks.add(callback);
+    return () => {
+      this.stateCallbacks.delete(callback);
     };
   }
   /**
-   * Restore view state
+   * Get the last known shared state
    */
-  setState(state) {
-    this.currentState = state;
-    if (state.viewSpecific.currentPath) {
-      this.currentPath = state.viewSpecific.currentPath;
+  getState() {
+    return this.lastKnownState;
+  }
+  /**
+   * Update focused item (when user clicks a card)
+   */
+  setFocusedItem(path) {
+    if (this.core) {
+      this.core.updateSharedState({ focusedItem: path });
     }
   }
   /**
-   * Cleanup resources
+   * Update selected items
    */
-  cleanup() {
-    this.containerEl = null;
-    this.currentState = null;
-  }
-  /**
-   * Handle shared state changes (cross-view highlighting)
-   */
-  onSharedStateChange(state) {
-    if (this.containerEl) {
-      this.updateHighlighting(state);
+  setSelectedItems(paths) {
+    if (this.core) {
+      this.core.updateSharedState({ selectedItems: paths });
     }
   }
   /**
-   * Update card highlighting based on shared state
+   * Add item to selection
    */
-  updateHighlighting(state) {
-    if (!this.containerEl)
-      return;
-    this.containerEl.querySelectorAll(".kanban-card-highlighted").forEach((el) => {
-      el.removeClass("kanban-card-highlighted");
-    });
-    this.containerEl.querySelectorAll(".kanban-card-selected").forEach((el) => {
-      el.removeClass("kanban-card-selected");
-    });
-    if (state.focusedItem) {
-      const focusedCard = this.containerEl.querySelector(
-        `[data-path="${state.focusedItem}"]`
-      );
-      if (focusedCard) {
-        focusedCard.addClass("kanban-card-highlighted");
+  addToSelection(path) {
+    if (this.core && this.lastKnownState) {
+      const current = this.lastKnownState.selectedItems || [];
+      if (!current.includes(path)) {
+        this.core.updateSharedState({
+          selectedItems: [...current, path]
+        });
       }
     }
-    for (const path of state.selectedItems) {
-      const selectedCard = this.containerEl.querySelector(`[data-path="${path}"]`);
-      if (selectedCard) {
-        selectedCard.addClass("kanban-card-selected");
+  }
+  /**
+   * Clear selection
+   */
+  clearSelection() {
+    if (this.core) {
+      this.core.updateSharedState({
+        focusedItem: void 0,
+        selectedItems: []
+      });
+    }
+  }
+  /**
+   * Sync search query with core
+   */
+  syncSearch(query) {
+    if (this.core) {
+      this.core.updateFilters({ search: query });
+    }
+  }
+  /**
+   * Sync tag filters with core
+   */
+  syncTags(tags) {
+    if (this.core) {
+      this.core.updateFilters({ tags });
+    }
+  }
+  /**
+   * Sync file type filters with core
+   */
+  syncFileTypes(fileTypes) {
+    if (this.core) {
+      this.core.updateFilters({ fileTypes });
+    }
+  }
+  /**
+   * Get highlighted items (focused + selected)
+   */
+  getHighlightedItems() {
+    if (!this.lastKnownState)
+      return [];
+    const items = [];
+    if (this.lastKnownState.focusedItem) {
+      items.push(this.lastKnownState.focusedItem);
+    }
+    items.push(...this.lastKnownState.selectedItems || []);
+    return items;
+  }
+  /**
+   * Check if an item is highlighted
+   */
+  isHighlighted(path) {
+    if (!this.lastKnownState)
+      return false;
+    return this.lastKnownState.focusedItem === path;
+  }
+  /**
+   * Check if an item is selected
+   */
+  isSelected(path) {
+    if (!this.lastKnownState)
+      return false;
+    return (this.lastKnownState.selectedItems || []).includes(path);
+  }
+  /**
+   * Notify all callbacks of state change
+   */
+  notifyStateChange(state) {
+    for (const callback of this.stateCallbacks) {
+      try {
+        callback(state);
+      } catch (error) {
+        console.error("CoreStateSync: Error in state change callback", error);
       }
     }
   }
 };
-
-// src/core-integration/types.ts
-function getCardType2(extension) {
-  const imageExtensions = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"];
-  const markdownExtensions = ["md"];
-  const ext = extension.toLowerCase();
-  if (markdownExtensions.includes(ext)) {
-    return "markdown";
-  }
-  if (imageExtensions.includes(ext)) {
-    return "image";
-  }
-  return "attachment";
-}
-function parseKanbanSyntax2(content) {
-  const lists = [];
-  const lines = content.split("\n");
-  let currentList = null;
-  let foundKanbanPattern = false;
-  for (const line of lines) {
-    const headerMatch = line.match(/^#{2,3}\s+(.+)$/);
-    if (headerMatch) {
-      if (currentList && currentList.items.length > 0) {
-        lists.push(currentList);
-      }
-      currentList = {
-        title: headerMatch[1].trim(),
-        items: []
-      };
-      continue;
-    }
-    const taskMatch = line.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
-    if (taskMatch && currentList) {
-      foundKanbanPattern = true;
-      currentList.items.push({
-        text: taskMatch[2].trim(),
-        completed: taskMatch[1].toLowerCase() === "x"
-      });
+function applyHighlighting(container, state) {
+  if (!container)
+    return;
+  container.querySelectorAll(".kanban-card-highlighted").forEach((el) => {
+    el.removeClass("kanban-card-highlighted");
+  });
+  container.querySelectorAll(".kanban-card-selected").forEach((el) => {
+    el.removeClass("kanban-card-selected");
+  });
+  if (!state)
+    return;
+  if (state.focusedItem) {
+    const focusedCard = container.querySelector(`[data-path="${state.focusedItem}"]`);
+    if (focusedCard) {
+      focusedCard.addClass("kanban-card-highlighted");
+      focusedCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }
-  if (currentList && currentList.items.length > 0) {
-    lists.push(currentList);
+  for (const path of state.selectedItems || []) {
+    const selectedCard = container.querySelector(`[data-path="${path}"]`);
+    if (selectedCard) {
+      selectedCard.addClass("kanban-card-selected");
+    }
   }
-  if (foundKanbanPattern && lists.length > 0) {
-    return lists;
-  }
-  return null;
 }
 
 // src/core-integration/VaultItemAdapter.ts
@@ -2082,7 +2965,7 @@ var VaultItemAdapter = class {
       return "folder";
     }
     if (item.file) {
-      return getCardType2(item.file.extension);
+      return getCardType(item.file.extension);
     }
     if (item.metadata.fileType) {
       return item.metadata.fileType;
@@ -2095,7 +2978,7 @@ var VaultItemAdapter = class {
   async enrichWithKanbanSyntax(card, file) {
     try {
       const content = await this.app.vault.cachedRead(file);
-      const kanbanLists = parseKanbanSyntax2(content);
+      const kanbanLists = parseKanbanSyntax(content);
       if (kanbanLists) {
         card.hasKanbanSyntax = true;
         card.kanbanLists = kanbanLists;
@@ -2108,7 +2991,7 @@ var VaultItemAdapter = class {
    */
   async fromTFile(file) {
     const extension = file.extension;
-    const type = getCardType2(extension);
+    const type = getCardType(extension);
     let preview;
     let tags = [];
     let hasKanbanSyntax = false;
@@ -2123,7 +3006,7 @@ var VaultItemAdapter = class {
             tags.push(match[1]);
           }
         }
-        const parsedKanban = parseKanbanSyntax2(content);
+        const parsedKanban = parseKanbanSyntax(content);
         if (parsedKanban) {
           hasKanbanSyntax = true;
           kanbanLists = parsedKanban;
@@ -2158,15 +3041,227 @@ var VaultItemAdapter = class {
   }
 };
 
+// src/core-integration/KanbanViewPlugin.ts
+var KanbanViewPlugin = class {
+  constructor(plugin) {
+    this.manifest = {
+      id: "kanban-4000",
+      name: "Kanban Board",
+      icon: "layout-dashboard",
+      description: "View vault items as a kanban board organized by folders"
+    };
+    this.plugin = plugin;
+    this.stateSync = new CoreStateSync();
+  }
+  /**
+   * Called when registered with Navigator Core
+   */
+  onRegister(core) {
+    this.stateSync.connect(core);
+    console.log("Kanban 4000: Registered with Navigator Core");
+  }
+  /**
+   * Called when unregistered from Navigator Core
+   */
+  onUnregister() {
+    this.stateSync.disconnect();
+    console.log("Kanban 4000: Unregistered from Navigator Core");
+  }
+  /**
+   * Create a view instance - returns a KanbanNavigatorView wrapper
+   */
+  createView(leaf) {
+    return new KanbanNavigatorView(leaf, this.plugin, this.stateSync);
+  }
+  /**
+   * Declare required metadata types
+   */
+  requiredMetadata() {
+    return ["tags", "links"];
+  }
+  /**
+   * Check if kanban can display an item
+   */
+  canDisplayItem(item) {
+    return item.type === "file" || item.type === "folder";
+  }
+  /**
+   * Get currently highlighted items for cross-view sync
+   */
+  getHighlightedItems() {
+    return this.stateSync.getHighlightedItems();
+  }
+  /**
+   * Get the CoreStateSync instance (for sharing with KanbanView)
+   */
+  getStateSync() {
+    return this.stateSync;
+  }
+  /**
+   * Get reference to Navigator Core
+   */
+  getCore() {
+    return this.stateSync.getCore();
+  }
+};
+var KanbanNavigatorView = class {
+  constructor(leaf, plugin, stateSync) {
+    this.containerEl = null;
+    this.currentPath = "/";
+    this.currentState = null;
+    this.stateUnsubscribe = null;
+    this.leaf = leaf;
+    this.plugin = plugin;
+    this.stateSync = stateSync;
+    this.adapter = new VaultItemAdapter(plugin.app);
+    this.stateUnsubscribe = stateSync.onStateChange((state) => {
+      this.onSharedStateChange(state);
+    });
+  }
+  /**
+   * Render items with current state
+   */
+  render(items, state) {
+    this.currentState = state;
+    if (this.containerEl) {
+      this.renderBoard(items, state);
+    }
+  }
+  /**
+   * Render the kanban board from VaultItems
+   */
+  async renderBoard(items, state) {
+    if (!this.containerEl)
+      return;
+    const cards = await this.adapter.toKanbanCards(items, state);
+    const lists = this.groupCardsIntoLists(cards);
+  }
+  /**
+   * Group cards into KanbanLists by their parent folder
+   */
+  groupCardsIntoLists(cards) {
+    const folderMap = /* @__PURE__ */ new Map();
+    const looseFiles = [];
+    for (const card of cards) {
+      if (card.type === "folder") {
+        const folderPath = card.path;
+        if (!folderMap.has(folderPath)) {
+          folderMap.set(folderPath, []);
+        }
+      } else {
+        const parentPath = card.path.substring(0, card.path.lastIndexOf("/")) || "/";
+        if (parentPath === this.currentPath || parentPath === "/") {
+          looseFiles.push(card);
+        } else if (folderMap.has(parentPath)) {
+          folderMap.get(parentPath).push(card);
+        }
+      }
+    }
+    const lists = [];
+    if (looseFiles.length > 0) {
+      lists.push({
+        title: "Files",
+        path: this.currentPath,
+        isLooseFiles: true,
+        cards: looseFiles
+      });
+    }
+    for (const [path, folderCards] of folderMap) {
+      const folderName = path.split("/").pop() || path;
+      lists.push({
+        title: folderName,
+        path,
+        isLooseFiles: false,
+        cards: folderCards
+      });
+    }
+    return lists;
+  }
+  /**
+   * Handle item selection
+   */
+  onItemSelect(path) {
+    this.stateSync.setFocusedItem(path);
+  }
+  /**
+   * Handle filter changes
+   */
+  onFilterChange(filters) {
+    const core = this.stateSync.getCore();
+    if (core) {
+      core.updateFilters(filters);
+    }
+  }
+  /**
+   * Get current view state
+   */
+  getState() {
+    return this.currentState || {
+      focusedItem: void 0,
+      selectedItems: [],
+      filters: {
+        search: "",
+        tags: [],
+        fileTypes: []
+      },
+      viewSpecific: {
+        currentPath: this.currentPath
+      }
+    };
+  }
+  /**
+   * Restore view state
+   */
+  setState(state) {
+    this.currentState = state;
+    if (state.viewSpecific.currentPath) {
+      this.currentPath = state.viewSpecific.currentPath;
+    }
+  }
+  /**
+   * Cleanup resources
+   */
+  cleanup() {
+    if (this.stateUnsubscribe) {
+      this.stateUnsubscribe();
+      this.stateUnsubscribe = null;
+    }
+    this.containerEl = null;
+    this.currentState = null;
+  }
+  /**
+   * Handle shared state changes (cross-view highlighting)
+   */
+  onSharedStateChange(state) {
+    if (this.containerEl) {
+      applyHighlighting(this.containerEl, state);
+    }
+  }
+};
+
 // src/core-integration/CoreBoardBuilder.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 var CoreBoardBuilder = class {
   constructor(app, excludePatterns) {
     this.app = app;
     this.excludePatterns = excludePatterns;
     this.core = null;
+    this.bookmarkedPaths = /* @__PURE__ */ new Set();
     this.adapter = new VaultItemAdapter(app);
+    this.bookmarkService = new BookmarkService(app);
     this.tryConnectCore();
+  }
+  /**
+   * Refresh the cache of bookmarked paths
+   */
+  refreshBookmarkCache() {
+    this.bookmarkedPaths = this.bookmarkService.getBookmarkedPaths();
+  }
+  /**
+   * Check if a path is bookmarked
+   */
+  isBookmarked(path) {
+    return this.bookmarkedPaths.has(path);
   }
   /**
    * Attempt to connect to Navigator Core
@@ -2264,7 +3359,7 @@ var CoreBoardBuilder = class {
         continue;
       if (this.shouldExclude(child.name))
         continue;
-      if (child instanceof import_obsidian10.TFolder) {
+      if (child instanceof import_obsidian12.TFolder) {
         subfolders.push(child);
       } else {
         looseFiles.push(child);
@@ -2289,7 +3384,7 @@ var CoreBoardBuilder = class {
           continue;
         if (this.shouldExclude(item.name))
           continue;
-        if (item instanceof import_obsidian10.TFolder) {
+        if (item instanceof import_obsidian12.TFolder) {
           cards.push(this.adapter.fromTFolder(item));
         } else {
           const fileCard = await this.adapter.fromTFile(item);
@@ -2370,10 +3465,116 @@ var CoreBoardBuilder = class {
     return cards.filter((card) => typeFilters.includes(card.type));
   }
   /**
+   * Filter cards to only bookmarked items
+   */
+  filterByBookmarks(cards) {
+    return cards.filter((card) => this.isBookmarked(card.path));
+  }
+  /**
+   * Filter cards by tags
+   */
+  filterByTags(cards, tagFilters, mode) {
+    if (!tagFilters || tagFilters.length === 0) {
+      return cards;
+    }
+    return cards.filter((card) => {
+      if (!card.tags || card.tags.length === 0) {
+        return false;
+      }
+      const cardTagsLower = card.tags.map((t) => t.toLowerCase());
+      const filterTagsLower = tagFilters.map((t) => t.toLowerCase());
+      if (mode === "all") {
+        return filterTagsLower.every((tag) => cardTagsLower.includes(tag));
+      } else {
+        return filterTagsLower.some((tag) => cardTagsLower.includes(tag));
+      }
+    });
+  }
+  /**
+   * Get date range from preset
+   */
+  getDateRangeFromPreset(preset) {
+    const now = /* @__PURE__ */ new Date();
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    const end = endOfDay.getTime();
+    let start;
+    switch (preset) {
+      case "today":
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        break;
+      case "yesterday":
+        const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        start = yesterday.getTime();
+        break;
+      case "week":
+        const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+        start = weekAgo.getTime();
+        break;
+      case "month":
+        const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+        start = monthAgo.getTime();
+        break;
+      case "year":
+        const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+        start = yearAgo.getTime();
+        break;
+      default:
+        start = 0;
+    }
+    return { start, end };
+  }
+  /**
+   * Filter cards by date range
+   */
+  filterByDateRange(cards, dateFilter) {
+    if (!dateFilter) {
+      return cards;
+    }
+    let start;
+    let end;
+    if (dateFilter.preset) {
+      const range = this.getDateRangeFromPreset(dateFilter.preset);
+      start = range.start;
+      end = range.end;
+    } else {
+      start = dateFilter.start || 0;
+      end = dateFilter.end || Date.now();
+    }
+    return cards.filter((card) => {
+      if (!card.file) {
+        return card.type === "folder";
+      }
+      const timestamp = dateFilter.field === "created" ? card.file.stat.ctime : card.file.stat.mtime;
+      return timestamp >= start && timestamp <= end;
+    });
+  }
+  /**
+   * Collect all unique tags from a list of cards
+   */
+  collectAllTags(cards) {
+    const tagSet = /* @__PURE__ */ new Set();
+    for (const card of cards) {
+      if (card.tags) {
+        for (const tag of card.tags) {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
+  }
+  /**
    * Process cards with filter and sort
    */
   processCards(cards, state) {
-    let processed = this.filterByType(cards, state.typeFilters);
+    let processed = cards;
+    if (state.showBookmarksOnly) {
+      processed = this.filterByBookmarks(processed);
+    }
+    processed = this.filterByType(processed, state.typeFilters);
+    processed = this.filterByTags(processed, state.tagFilters, state.tagFilterMode);
+    if (state.dateFilter) {
+      processed = this.filterByDateRange(processed, state.dateFilter);
+    }
     processed = this.filterCards(processed, state.searchQuery);
     return this.sortCards(processed, state.sortBy, state.sortDirection);
   }
@@ -2381,7 +3582,14 @@ var CoreBoardBuilder = class {
    * Process all lists
    */
   processLists(lists, state) {
-    const hasActiveFilters = state.searchQuery || state.typeFilters && state.typeFilters.length > 0;
+    var _a, _b, _c;
+    if (state.showBookmarksOnly) {
+      this.refreshBookmarkCache();
+    }
+    const hasSearch = !!((_a = state.searchQuery) == null ? void 0 : _a.trim());
+    const hasTypes = ((_b = state.typeFilters) == null ? void 0 : _b.length) > 0;
+    const hasTags = ((_c = state.tagFilters) == null ? void 0 : _c.length) > 0;
+    const hasActiveFilters = hasSearch || hasTypes || hasTags || !!state.dateFilter || state.showBookmarksOnly;
     return lists.map((list) => ({
       ...list,
       cards: this.processCards(list.cards, state)
@@ -2391,11 +3599,19 @@ var CoreBoardBuilder = class {
 
 // src/KanbanView.ts
 var VIEW_TYPE_KANBAN = "kanban-4000-view";
-var KanbanView = class extends import_obsidian11.ItemView {
+var KanbanView = class extends import_obsidian13.ItemView {
   constructor(leaf, plugin) {
     var _a, _b, _c, _d, _e;
     super(leaf);
+    this.stateSync = null;
     this.stateUnsubscribe = null;
+    // Render throttling state
+    this.pendingRender = false;
+    this.pendingRefresh = false;
+    this.renderFrameId = null;
+    this.initialized = false;
+    // Keyboard navigation state
+    this.focusedCardIndex = null;
     this.plugin = plugin;
     this.state = {
       currentPath: ((_a = plugin.settings) == null ? void 0 : _a.rootFolder) || "/",
@@ -2403,17 +3619,20 @@ var KanbanView = class extends import_obsidian11.ItemView {
       searchQuery: "",
       sortBy: ((_b = plugin.settings) == null ? void 0 : _b.defaultSortBy) || "name",
       sortDirection: ((_c = plugin.settings) == null ? void 0 : _c.defaultSortDirection) || "asc",
-      typeFilters: []
+      typeFilters: [],
+      showBookmarksOnly: false,
+      tagFilters: [],
+      tagFilterMode: "any"
     };
     this.keyHandler = this.handleKeydown.bind(this);
     this.contextMenu = new CardContextMenu(this.app, {
       onRename: async (card) => {
-        const renamed = await renameItem(this.app, card);
+        const renamed = await renameItem(this.app, card, this.plugin.undoManager);
         if (renamed)
           await this.render();
       },
       onDelete: async (card) => {
-        const deleted = await deleteItem(this.app, card);
+        const deleted = await deleteItem(this.app, card, this.plugin.undoManager);
         if (deleted)
           await this.render();
       },
@@ -2477,20 +3696,57 @@ var KanbanView = class extends import_obsidian11.ItemView {
       },
       onTypeFilterChange: async (types) => {
         this.state.typeFilters = types;
-        await this.refreshBoard();
+        this.state.showBookmarksOnly = false;
+        await this.render();
+      },
+      onBookmarkFilterToggle: async (active) => {
+        this.state.showBookmarksOnly = active;
+        if (active) {
+          this.state.typeFilters = [];
+          this.state.tagFilters = [];
+          this.state.dateFilter = void 0;
+          this.state.searchQuery = "";
+        }
+        await this.render();
+      },
+      onTagFilterChange: async (tags, mode) => {
+        this.state.tagFilters = tags;
+        this.state.tagFilterMode = mode;
+        await this.render();
+      },
+      onDateFilterChange: async (filter) => {
+        this.state.dateFilter = filter;
+        await this.render();
+      },
+      onClearAllFilters: async () => {
+        this.state.typeFilters = [];
+        this.state.tagFilters = [];
+        this.state.tagFilterMode = "any";
+        this.state.dateFilter = void 0;
+        this.state.showBookmarksOnly = false;
+        this.state.searchQuery = "";
+        await this.render();
       },
       onNavigateBack: async () => this.navigateBack(),
-      onNavigateToBreadcrumb: async (index) => this.navigateToBreadcrumb(index)
+      onNavigateToBreadcrumb: async (index) => this.navigateToBreadcrumb(index),
+      // Saved filter callbacks
+      onSaveFilter: () => this.showSaveFilterModal(),
+      onApplySavedFilter: (filter) => this.applySavedFilter(filter),
+      onDeleteSavedFilter: (id) => this.deleteSavedFilter(id)
     });
-    this.subscribeToCore();
+    this.stateSync = this.plugin.getStateSync();
+    if (this.stateSync) {
+      this.stateUnsubscribe = this.stateSync.onStateChange((state) => {
+        this.onCoreStateChange(state);
+      });
+    }
   }
   /**
    * Handle card click - notify Navigator Core if connected
    */
   async handleCardClick(card) {
-    const core = this.plugin.getNavigatorCore();
-    if (core) {
-      core.updateSharedState({ focusedItem: card.path });
+    if (this.stateSync) {
+      this.stateSync.setFocusedItem(card.path);
     }
     await this.cardActionHandler.handleCardClick(card, this.contentEl);
   }
@@ -2498,20 +3754,8 @@ var KanbanView = class extends import_obsidian11.ItemView {
    * Sync search query with Navigator Core
    */
   syncSearchWithCore(query) {
-    const core = this.plugin.getNavigatorCore();
-    if (core) {
-      core.updateFilters({ search: query });
-    }
-  }
-  /**
-   * Subscribe to Navigator Core state changes
-   */
-  subscribeToCore() {
-    const core = this.plugin.getNavigatorCore();
-    if (core) {
-      this.stateUnsubscribe = core.on("state-change", (payload) => {
-        this.onCoreStateChange(payload.current);
-      });
+    if (this.stateSync) {
+      this.stateSync.syncSearch(query);
     }
   }
   /**
@@ -2519,37 +3763,13 @@ var KanbanView = class extends import_obsidian11.ItemView {
    */
   onCoreStateChange(state) {
     var _a;
-    if (!this.contentEl)
+    if (!this.contentEl || !this.initialized)
       return;
-    this.updateHighlighting(state.focusedItem, state.selectedItems || []);
+    applyHighlighting(this.contentEl, state);
     if (((_a = state.filters) == null ? void 0 : _a.search) !== void 0 && state.filters.search !== this.state.searchQuery) {
       this.state.searchQuery = state.filters.search;
       this.toolbarRenderer.setSearchQuery(state.filters.search);
       this.refreshBoard();
-    }
-  }
-  /**
-   * Update card highlighting based on shared state
-   */
-  updateHighlighting(focusedItem, selectedItems = []) {
-    this.contentEl.querySelectorAll(".kanban-card-highlighted").forEach((el) => {
-      el.removeClass("kanban-card-highlighted");
-    });
-    this.contentEl.querySelectorAll(".kanban-card-selected").forEach((el) => {
-      el.removeClass("kanban-card-selected");
-    });
-    if (focusedItem) {
-      const focusedCard = this.contentEl.querySelector(`[data-path="${focusedItem}"]`);
-      if (focusedCard) {
-        focusedCard.addClass("kanban-card-highlighted");
-        focusedCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    }
-    for (const path of selectedItems) {
-      const selectedCard = this.contentEl.querySelector(`[data-path="${path}"]`);
-      if (selectedCard) {
-        selectedCard.addClass("kanban-card-selected");
-      }
     }
   }
   getViewType() {
@@ -2563,17 +3783,25 @@ var KanbanView = class extends import_obsidian11.ItemView {
     return "layout-dashboard";
   }
   async onOpen() {
-    var _a;
+    var _a, _b;
     this.contentEl = this.containerEl.children[1];
     this.contentEl.empty();
     this.contentEl.addClass("kanban-4000-container");
     if ((_a = this.plugin.settings) == null ? void 0 : _a.enableAnimations) {
       this.contentEl.addClass("kanban-animations-enabled");
     }
+    if ((_b = this.plugin.settings) == null ? void 0 : _b.wrapLists) {
+      this.contentEl.addClass("kanban-grid-mode");
+    }
     this.containerEl.addEventListener("keydown", this.keyHandler);
     await this.render();
+    this.initialized = true;
   }
   async onClose() {
+    if (this.renderFrameId) {
+      cancelAnimationFrame(this.renderFrameId);
+      this.renderFrameId = null;
+    }
     if (this.stateUnsubscribe) {
       this.stateUnsubscribe();
       this.stateUnsubscribe = null;
@@ -2592,16 +3820,52 @@ var KanbanView = class extends import_obsidian11.ItemView {
     }
     const searchInput = this.toolbarRenderer.getSearchInput();
     switch (e.key) {
-      case "Backspace":
+      case "ArrowUp":
+        e.preventDefault();
+        this.navigateCards("up");
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        this.navigateCards("down");
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        this.navigateCards("right");
+        break;
       case "ArrowLeft":
+        if (this.focusedCardIndex && this.focusedCardIndex.listIndex > 0) {
+          e.preventDefault();
+          this.navigateCards("left");
+        } else if (this.state.history.length > 0) {
+          e.preventDefault();
+          this.clearCardFocus();
+          this.navigateBack();
+        }
+        break;
+      case "Backspace":
         if (this.state.history.length > 0) {
           e.preventDefault();
+          this.clearCardFocus();
           this.navigateBack();
+        }
+        break;
+      case "Tab":
+        if (this.focusedCardIndex) {
+          e.preventDefault();
+          this.navigateCards(e.shiftKey ? "prevList" : "nextList");
+        }
+        break;
+      case "Enter":
+        if (this.focusedCardIndex) {
+          e.preventDefault();
+          this.activateFocusedCard();
         }
         break;
       case "Escape":
         e.preventDefault();
-        if (this.cardActionHandler.hasEmbeddedKanban()) {
+        if (this.focusedCardIndex) {
+          this.clearCardFocus();
+        } else if (this.cardActionHandler.hasEmbeddedKanban()) {
           this.cardActionHandler.closeEmbeddedKanban(this.contentEl);
         } else if (this.state.searchQuery) {
           this.state.searchQuery = "";
@@ -2610,11 +3874,13 @@ var KanbanView = class extends import_obsidian11.ItemView {
         break;
       case "/":
         e.preventDefault();
+        this.clearCardFocus();
         searchInput == null ? void 0 : searchInput.focus();
         break;
       case "f":
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
+          this.clearCardFocus();
           searchInput == null ? void 0 : searchInput.focus();
         }
         break;
@@ -2626,10 +3892,125 @@ var KanbanView = class extends import_obsidian11.ItemView {
         break;
       case "Home":
         e.preventDefault();
+        this.clearCardFocus();
         this.state.history = [];
         this.state.currentPath = ((_a = this.plugin.settings) == null ? void 0 : _a.rootFolder) || "/";
         this.render();
         break;
+    }
+  }
+  /**
+   * Navigate between cards using keyboard
+   */
+  navigateCards(direction) {
+    const lists = this.contentEl.querySelectorAll(".kanban-list:not(.kanban-new-folder-list)");
+    if (lists.length === 0)
+      return;
+    if (!this.focusedCardIndex) {
+      this.focusedCardIndex = { listIndex: 0, cardIndex: 0 };
+      this.updateCardFocus();
+      return;
+    }
+    let { listIndex, cardIndex } = this.focusedCardIndex;
+    const getCardCount = (li) => {
+      const list = lists[li];
+      return (list == null ? void 0 : list.querySelectorAll(".kanban-card").length) || 0;
+    };
+    const findNextNonEmptyList = (startIndex, delta) => {
+      let idx = startIndex + delta;
+      while (idx >= 0 && idx < lists.length) {
+        if (getCardCount(idx) > 0)
+          return idx;
+        idx += delta;
+      }
+      return startIndex;
+    };
+    switch (direction) {
+      case "up":
+        if (cardIndex > 0) {
+          cardIndex--;
+        } else if (listIndex > 0) {
+          const newListIndex = findNextNonEmptyList(listIndex, -1);
+          if (newListIndex !== listIndex) {
+            listIndex = newListIndex;
+            cardIndex = Math.max(0, getCardCount(listIndex) - 1);
+          }
+        }
+        break;
+      case "down":
+        if (cardIndex < getCardCount(listIndex) - 1) {
+          cardIndex++;
+        } else if (listIndex < lists.length - 1) {
+          const newListIndex = findNextNonEmptyList(listIndex, 1);
+          if (newListIndex !== listIndex) {
+            listIndex = newListIndex;
+            cardIndex = 0;
+          }
+        }
+        break;
+      case "left":
+      case "prevList":
+        if (listIndex > 0) {
+          const newListIndex = findNextNonEmptyList(listIndex, -1);
+          if (newListIndex !== listIndex) {
+            listIndex = newListIndex;
+            cardIndex = Math.min(cardIndex, getCardCount(listIndex) - 1);
+          }
+        }
+        break;
+      case "right":
+      case "nextList":
+        if (listIndex < lists.length - 1) {
+          const newListIndex = findNextNonEmptyList(listIndex, 1);
+          if (newListIndex !== listIndex) {
+            listIndex = newListIndex;
+            cardIndex = Math.min(cardIndex, getCardCount(listIndex) - 1);
+          }
+        }
+        break;
+    }
+    cardIndex = Math.max(0, Math.min(cardIndex, getCardCount(listIndex) - 1));
+    this.focusedCardIndex = { listIndex, cardIndex };
+    this.updateCardFocus();
+  }
+  /**
+   * Update the visual focus indicator on cards
+   */
+  updateCardFocus() {
+    this.contentEl.querySelectorAll(".kanban-card-focused").forEach((el) => {
+      el.removeClass("kanban-card-focused");
+    });
+    if (!this.focusedCardIndex)
+      return;
+    const { listIndex, cardIndex } = this.focusedCardIndex;
+    const lists = this.contentEl.querySelectorAll(".kanban-list:not(.kanban-new-folder-list)");
+    const list = lists[listIndex];
+    if (list) {
+      const cards = list.querySelectorAll(".kanban-card");
+      const card = cards[cardIndex];
+      if (card) {
+        card.addClass("kanban-card-focused");
+        card.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        card.focus();
+      }
+    }
+  }
+  /**
+   * Clear card focus
+   */
+  clearCardFocus() {
+    this.focusedCardIndex = null;
+    this.contentEl.querySelectorAll(".kanban-card-focused").forEach((el) => {
+      el.removeClass("kanban-card-focused");
+    });
+  }
+  /**
+   * Activate (click) the focused card
+   */
+  activateFocusedCard() {
+    const focused = this.contentEl.querySelector(".kanban-card-focused");
+    if (focused) {
+      focused.click();
     }
   }
   async setState(state, result) {
@@ -2668,10 +4049,74 @@ var KanbanView = class extends import_obsidian11.ItemView {
       await this.render();
     }
   }
+  /**
+   * Save current scroll and selection state
+   */
+  saveViewState() {
+    var _a, _b, _c;
+    const board = this.contentEl.querySelector(".kanban-board");
+    const focused = this.contentEl.querySelector(".kanban-card-highlighted");
+    return {
+      scrollTop: (_a = board == null ? void 0 : board.scrollTop) != null ? _a : 0,
+      scrollLeft: (_b = board == null ? void 0 : board.scrollLeft) != null ? _b : 0,
+      focusedPath: (_c = focused == null ? void 0 : focused.getAttribute("data-path")) != null ? _c : null
+    };
+  }
+  /**
+   * Restore scroll and selection state
+   */
+  restoreViewState(savedState) {
+    const board = this.contentEl.querySelector(".kanban-board");
+    if (board) {
+      board.scrollTop = savedState.scrollTop;
+      board.scrollLeft = savedState.scrollLeft;
+    }
+    if (savedState.focusedPath) {
+      const card = this.contentEl.querySelector(`[data-path="${savedState.focusedPath}"]`);
+      if (card) {
+        card.addClass("kanban-card-highlighted");
+      }
+    }
+  }
+  /**
+   * Queue a board refresh (throttled)
+   * Use this for filter/sort changes that don't need full re-render
+   */
+  queueRefresh() {
+    if (this.pendingRefresh)
+      return;
+    this.pendingRefresh = true;
+    if (this.renderFrameId) {
+      cancelAnimationFrame(this.renderFrameId);
+    }
+    this.renderFrameId = requestAnimationFrame(async () => {
+      await this.refreshBoard();
+      this.pendingRefresh = false;
+      this.renderFrameId = null;
+    });
+  }
+  /**
+   * Queue a full render (throttled)
+   * Use this for navigation or structural changes
+   */
+  queueRender() {
+    if (this.pendingRender)
+      return;
+    this.pendingRender = true;
+    if (this.renderFrameId) {
+      cancelAnimationFrame(this.renderFrameId);
+    }
+    this.renderFrameId = requestAnimationFrame(async () => {
+      await this.render();
+      this.pendingRender = false;
+      this.renderFrameId = null;
+    });
+  }
   async refreshBoard() {
     const currentFolder = this.getCurrentFolder();
     if (!currentFolder)
       return;
+    const savedState = this.saveViewState();
     const oldBoard = this.contentEl.querySelector(".kanban-board");
     if (oldBoard) {
       oldBoard.remove();
@@ -2679,11 +4124,29 @@ var KanbanView = class extends import_obsidian11.ItemView {
     const lists = await this.coreBoardBuilder.buildBoard(currentFolder);
     const processedLists = this.coreBoardBuilder.processLists(lists, this.state);
     this.boardRenderer.renderBoard(this.contentEl, processedLists, this.state.searchQuery);
+    this.restoreViewState(savedState);
+    if (this.stateSync) {
+      const sharedState = this.stateSync.getState();
+      applyHighlighting(this.contentEl, sharedState);
+    }
   }
   async render() {
-    var _a, _b;
+    var _a, _b, _c, _d, _e;
+    if (this.cardActionHandler.isInEmbeddedMode()) {
+      return;
+    }
+    this.focusedCardIndex = null;
     this.contentEl.empty();
-    const cardWidth = (_b = (_a = this.plugin.settings) == null ? void 0 : _a.cardWidth) != null ? _b : 280;
+    this.contentEl.addClass("kanban-4000-container");
+    if ((_a = this.plugin.settings) == null ? void 0 : _a.enableAnimations) {
+      this.contentEl.addClass("kanban-animations-enabled");
+    }
+    if ((_b = this.plugin.settings) == null ? void 0 : _b.wrapLists) {
+      this.contentEl.addClass("kanban-grid-mode");
+    } else {
+      this.contentEl.removeClass("kanban-grid-mode");
+    }
+    const cardWidth = (_d = (_c = this.plugin.settings) == null ? void 0 : _c.cardWidth) != null ? _d : 280;
     this.contentEl.style.setProperty("--kanban-card-width", `${cardWidth}px`);
     const currentFolder = this.getCurrentFolder();
     if (!currentFolder) {
@@ -2693,857 +4156,94 @@ var KanbanView = class extends import_obsidian11.ItemView {
       });
       return;
     }
-    this.toolbarRenderer.renderHeader(this.contentEl, currentFolder, this.state);
-    this.toolbarRenderer.renderToolbar(this.contentEl, this.state);
+    const itemCount = this.countItemsInFolder(currentFolder);
+    this.toolbarRenderer.renderHeader(this.contentEl, currentFolder, this.state, itemCount);
     const lists = await this.coreBoardBuilder.buildBoard(currentFolder);
+    const allCards = lists.flatMap((list) => list.cards);
+    const availableTags = this.coreBoardBuilder.collectAllTags(allCards);
+    this.toolbarRenderer.setAvailableTags(availableTags);
+    this.toolbarRenderer.renderToolbar(this.contentEl, this.state, ((_e = this.plugin.settings) == null ? void 0 : _e.savedFilters) || []);
     const processedLists = this.coreBoardBuilder.processLists(lists, this.state);
     this.boardRenderer.renderBoard(this.contentEl, processedLists, this.state.searchQuery);
-    const core = this.plugin.getNavigatorCore();
-    if (core) {
-      const sharedState = core.getSharedState();
-      this.updateHighlighting(sharedState.focusedItem, sharedState.selectedItems);
+    if (this.stateSync) {
+      const sharedState = this.stateSync.getState();
+      applyHighlighting(this.contentEl, sharedState);
     }
+  }
+  /**
+   * Show modal to save current filter configuration
+   */
+  showSaveFilterModal() {
+    var _a;
+    const currentSearch = ((_a = this.toolbarRenderer.getSearchInput()) == null ? void 0 : _a.value) || this.state.searchQuery;
+    const modal = new SaveFilterModal(this.app, async (name) => {
+      const newFilter = {
+        id: `custom-${Date.now()}`,
+        name,
+        typeFilters: [...this.state.typeFilters],
+        tagFilters: this.state.tagFilters.length > 0 ? [...this.state.tagFilters] : void 0,
+        tagFilterMode: this.state.tagFilterMode,
+        dateFilter: this.state.dateFilter ? { ...this.state.dateFilter } : void 0,
+        searchQuery: currentSearch || void 0
+      };
+      this.plugin.settings.savedFilters.push(newFilter);
+      await this.plugin.saveSettings();
+    });
+    modal.open();
+  }
+  /**
+   * Apply a saved filter to the current state
+   */
+  async applySavedFilter(filter) {
+    this.state.typeFilters = [...filter.typeFilters || []];
+    this.state.tagFilters = [...filter.tagFilters || []];
+    this.state.tagFilterMode = filter.tagFilterMode || "any";
+    this.state.dateFilter = filter.dateFilter ? { ...filter.dateFilter } : void 0;
+    this.state.searchQuery = filter.searchQuery || "";
+    this.state.showBookmarksOnly = false;
+    await this.render();
+  }
+  /**
+   * Delete a saved filter by ID
+   */
+  async deleteSavedFilter(filterId) {
+    this.plugin.settings.savedFilters = this.plugin.settings.savedFilters.filter(
+      (f) => f.id !== filterId
+    );
+    await this.plugin.saveSettings();
+    await this.render();
   }
   getCurrentFolder() {
     const currentFolder = this.state.currentPath === "/" ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(this.state.currentPath);
-    if (currentFolder instanceof import_obsidian11.TFolder) {
+    if (currentFolder instanceof import_obsidian13.TFolder) {
       return currentFolder;
     }
     return null;
   }
-};
-
-// src/bookmarks/BookmarkKanbanView.ts
-var import_obsidian14 = require("obsidian");
-
-// src/bookmarks/BookmarkBuilder.ts
-var import_obsidian12 = require("obsidian");
-var BookmarkBuilder = class {
-  constructor(app) {
-    this.app = app;
-  }
   /**
-   * Get the bookmarks plugin instance
+   * Count visible items in a folder (respects exclude patterns)
    */
-  getBookmarksPlugin() {
-    var _a, _b;
-    return (_b = (_a = this.app.internalPlugins) == null ? void 0 : _a.getPluginById) == null ? void 0 : _b.call(_a, "bookmarks");
-  }
-  /**
-   * Check if bookmarks plugin is enabled
-   */
-  isBookmarksEnabled() {
+  countItemsInFolder(folder) {
     var _a;
-    const plugin = this.getBookmarksPlugin();
-    return (_a = plugin == null ? void 0 : plugin.enabled) != null ? _a : false;
-  }
-  /**
-   * Get all bookmarks from Obsidian
-   */
-  getBookmarks() {
-    var _a, _b;
-    const plugin = this.getBookmarksPlugin();
-    if (!(plugin == null ? void 0 : plugin.enabled)) {
-      return [];
+    let count = 0;
+    const children = folder.children || [];
+    const excludePatterns = ((_a = this.plugin.settings) == null ? void 0 : _a.excludePatterns) || [];
+    for (const child of children) {
+      if (child.name.startsWith("."))
+        continue;
+      const isExcluded = excludePatterns.some(
+        (pattern) => child.name.toLowerCase() === pattern.toLowerCase()
+      );
+      if (isExcluded)
+        continue;
+      count++;
     }
-    return (_b = (_a = plugin.instance) == null ? void 0 : _a.items) != null ? _b : [];
-  }
-  /**
-   * Build the bookmark board structure
-   * Groups become columns, ungrouped items go in a "Bookmarks" column
-   */
-  async buildBoard(groupPath = null) {
-    const bookmarks = this.getBookmarks();
-    const lists = [];
-    if (groupPath) {
-      const group = this.findGroup(bookmarks, groupPath);
-      if (group && group.items) {
-        return this.buildListsFromItems(group.items);
-      }
-      return [];
-    }
-    return this.buildListsFromItems(bookmarks);
-  }
-  /**
-   * Build lists from a set of bookmark items
-   */
-  async buildListsFromItems(items) {
-    const lists = [];
-    const ungroupedItems = [];
-    for (const item of items) {
-      if (item.type === "group") {
-        const groupCards = await this.buildCardsFromItems(item.items || []);
-        lists.push({
-          title: item.title || "Untitled Group",
-          type: "group",
-          items: groupCards
-        });
-      } else {
-        const card = await this.itemToCard(item);
-        if (card) {
-          ungroupedItems.push(card);
-        }
-      }
-    }
-    if (ungroupedItems.length > 0) {
-      lists.unshift({
-        title: "Bookmarks",
-        type: "ungrouped",
-        items: ungroupedItems
-      });
-    }
-    return lists;
-  }
-  /**
-   * Build cards from a list of bookmark items (non-recursive for display)
-   */
-  async buildCardsFromItems(items) {
-    const cards = [];
-    for (const item of items) {
-      const card = await this.itemToCard(item);
-      if (card) {
-        cards.push(card);
-      }
-    }
-    return cards;
-  }
-  /**
-   * Find a group by its path (nested groups use "/" separator)
-   */
-  findGroup(items, path) {
-    const parts = path.split("/");
-    let current = items;
-    for (const part of parts) {
-      const found = current.find((item) => item.type === "group" && item.title === part);
-      if (!found)
-        return null;
-      if (found.type === "group") {
-        current = found.items || [];
-        if (parts.indexOf(part) === parts.length - 1) {
-          return found;
-        }
-      }
-    }
-    return null;
-  }
-  /**
-   * Convert a bookmark item to a card
-   */
-  async itemToCard(item) {
-    const baseCard = {
-      title: item.title || this.getTitleFromPath(item.path) || "Untitled",
-      path: item.path,
-      type: item.type,
-      bookmarkCreated: item.ctime,
-      originalItem: item
-    };
-    switch (item.type) {
-      case "file":
-        if (item.path) {
-          const file = this.app.vault.getAbstractFileByPath(item.path);
-          if (file instanceof import_obsidian12.TFile) {
-            baseCard.file = file;
-            baseCard.title = file.basename;
-            if (file.extension === "md") {
-              try {
-                const content = await this.app.vault.cachedRead(file);
-                baseCard.tags = extractTags(content);
-                const withoutFrontmatter = content.replace(/^---[\s\S]*?---\n?/, "");
-                const cleanContent = withoutFrontmatter.trim();
-                baseCard.preview = cleanContent.substring(0, 100) + (cleanContent.length > 100 ? "..." : "");
-              } catch (e) {
-              }
-            }
-          }
-        }
-        break;
-      case "folder":
-        if (item.path) {
-          const folder = this.app.vault.getAbstractFileByPath(item.path);
-          if (folder instanceof import_obsidian12.TFolder) {
-            baseCard.folder = folder;
-            baseCard.title = folder.name;
-          }
-        }
-        break;
-      case "group":
-        baseCard.itemCount = (item.items || []).length;
-        break;
-      case "search":
-        baseCard.query = item.query;
-        baseCard.title = item.title || `Search: ${item.query}`;
-        break;
-      case "graph":
-        baseCard.title = item.title || "Graph View";
-        break;
-      default:
-        baseCard.type = "unknown";
-    }
-    return baseCard;
-  }
-  /**
-   * Get title from file path
-   */
-  getTitleFromPath(path) {
-    if (!path)
-      return void 0;
-    const parts = path.split("/");
-    const filename = parts[parts.length - 1];
-    return filename.replace(/\.[^/.]+$/, "");
-  }
-  /**
-   * Sort cards based on sort settings
-   */
-  sortCards(cards, sortBy, sortDirection) {
-    const sorted = [...cards].sort((a, b) => {
-      let comparison = 0;
-      switch (sortBy) {
-        case "name":
-          comparison = a.title.localeCompare(b.title);
-          break;
-        case "created":
-          comparison = b.bookmarkCreated - a.bookmarkCreated;
-          break;
-        case "type":
-          comparison = a.type.localeCompare(b.type);
-          break;
-      }
-      return sortDirection === "asc" ? comparison : -comparison;
-    });
-    return sorted;
-  }
-  /**
-   * Filter cards based on search query
-   */
-  filterCards(cards, searchQuery) {
-    if (!searchQuery.trim()) {
-      return cards;
-    }
-    const query = searchQuery.toLowerCase();
-    return cards.filter((card) => {
-      var _a, _b, _c, _d;
-      if (card.title.toLowerCase().includes(query))
-        return true;
-      if ((_a = card.path) == null ? void 0 : _a.toLowerCase().includes(query))
-        return true;
-      if ((_b = card.preview) == null ? void 0 : _b.toLowerCase().includes(query))
-        return true;
-      if ((_c = card.tags) == null ? void 0 : _c.some((tag) => tag.toLowerCase().includes(query)))
-        return true;
-      if ((_d = card.query) == null ? void 0 : _d.toLowerCase().includes(query))
-        return true;
-      return false;
-    });
-  }
-  /**
-   * Apply both filtering and sorting to cards
-   */
-  processCards(cards, state) {
-    const filtered = this.filterCards(cards, state.searchQuery);
-    return this.sortCards(filtered, state.sortBy, state.sortDirection);
-  }
-  /**
-   * Process all lists - filter and sort cards in each list
-   */
-  processLists(lists, state) {
-    return lists.map((list) => ({
-      ...list,
-      items: this.processCards(list.items, state)
-    })).filter((list) => list.items.length > 0 || state.searchQuery === "");
-  }
-  /**
-   * Add a new bookmark
-   */
-  async addBookmark(path, title) {
-    const plugin = this.getBookmarksPlugin();
-    if (!(plugin == null ? void 0 : plugin.enabled) || !plugin.instance) {
-      return false;
-    }
-    try {
-      await plugin.instance.addItem({
-        type: "file",
-        path,
-        title,
-        ctime: Date.now()
-      });
-      return true;
-    } catch (e) {
-      console.error("Failed to add bookmark:", e);
-      return false;
-    }
-  }
-  /**
-   * Remove a bookmark
-   */
-  async removeBookmark(item) {
-    const plugin = this.getBookmarksPlugin();
-    if (!(plugin == null ? void 0 : plugin.enabled) || !plugin.instance) {
-      return false;
-    }
-    try {
-      await plugin.instance.removeItem(item);
-      return true;
-    } catch (e) {
-      console.error("Failed to remove bookmark:", e);
-      return false;
-    }
-  }
-};
-
-// src/bookmarks/BookmarkRenderer.ts
-var import_obsidian13 = require("obsidian");
-var BookmarkRenderer = class {
-  constructor(app, plugin, callbacks) {
-    this.app = app;
-    this.plugin = plugin;
-    this.callbacks = callbacks;
-  }
-  /**
-   * Render the bookmark board with all lists
-   */
-  renderBoard(container, lists, searchQuery) {
-    const board = container.createEl("div", { cls: "kanban-board bookmark-board" });
-    if (lists.length === 0 && searchQuery) {
-      board.createEl("div", {
-        cls: "kanban-empty",
-        text: "No bookmarks match your search"
-      });
-      return;
-    }
-    if (lists.length === 0) {
-      board.createEl("div", {
-        cls: "kanban-empty",
-        text: "No bookmarks found. Add bookmarks using Obsidian's bookmark feature."
-      });
-      return;
-    }
-    for (const list of lists) {
-      this.renderList(board, list);
-    }
-  }
-  /**
-   * Render a single list (column)
-   */
-  renderList(board, list) {
-    const listEl = board.createEl("div", {
-      cls: `kanban-list bookmark-list ${list.type === "group" ? "bookmark-group-list" : "bookmark-ungrouped-list"}`
-    });
-    const headerEl = listEl.createEl("div", { cls: "kanban-list-header" });
-    const iconEl = headerEl.createEl("span", { cls: "bookmark-list-icon" });
-    iconEl.innerHTML = list.type === "group" ? BookmarkIcons.group : BookmarkIcons.bookmark;
-    headerEl.createEl("span", {
-      cls: "kanban-list-title",
-      text: list.title
-    });
-    headerEl.createEl("span", {
-      cls: "kanban-list-count",
-      text: `${list.items.length}`
-    });
-    const cardsEl = listEl.createEl("div", { cls: "kanban-cards bookmark-cards" });
-    for (const card of list.items) {
-      this.renderCard(cardsEl, card);
-    }
-  }
-  /**
-   * Render a single bookmark card
-   */
-  renderCard(container, card) {
-    var _a, _b;
-    const cardEl = container.createEl("div", {
-      cls: `kanban-card bookmark-card bookmark-card-${card.type}`,
-      attr: { "data-path": card.path || "" }
-    });
-    cardEl.oncontextmenu = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.showContextMenu(e, card);
-    };
-    const headerEl = cardEl.createEl("div", { cls: "kanban-card-header" });
-    const iconEl = headerEl.createEl("span", { cls: "kanban-card-icon bookmark-card-icon" });
-    iconEl.innerHTML = this.getCardIcon(card);
-    headerEl.createEl("span", {
-      cls: "kanban-card-title",
-      text: card.title
-    });
-    if (card.type !== "file" && card.type !== "folder") {
-      const typeBadge = headerEl.createEl("span", {
-        cls: "bookmark-type-badge",
-        text: card.type
-      });
-    }
-    if (card.path && (card.type === "file" || card.type === "folder")) {
-      const pathEl = cardEl.createEl("div", { cls: "bookmark-card-path" });
-      pathEl.setText(card.path);
-    }
-    if (card.type === "search" && card.query) {
-      const queryEl = cardEl.createEl("div", { cls: "bookmark-card-query" });
-      queryEl.createEl("span", { cls: "bookmark-query-label", text: "Query: " });
-      queryEl.createEl("span", { cls: "bookmark-query-text", text: card.query });
-    }
-    if (card.type === "group" && card.itemCount !== void 0) {
-      const countEl = cardEl.createEl("div", { cls: "bookmark-card-count" });
-      countEl.setText(`${card.itemCount} item${card.itemCount !== 1 ? "s" : ""}`);
-    }
-    if (card.preview && ((_a = this.plugin.settings) == null ? void 0 : _a.showPreviewText)) {
-      const previewEl = cardEl.createEl("div", { cls: "kanban-card-preview bookmark-card-preview" });
-      previewEl.setText(card.preview);
-    }
-    if (card.tags && card.tags.length > 0 && ((_b = this.plugin.settings) == null ? void 0 : _b.showTags)) {
-      this.renderCardTags(cardEl, card);
-    }
-    headerEl.onclick = async (e) => {
-      e.preventDefault();
-      if (card.type === "group") {
-        await this.callbacks.onGroupClick(card.title);
-      } else {
-        await this.callbacks.onCardClick(card);
-      }
-    };
-  }
-  /**
-   * Render card tags
-   */
-  renderCardTags(cardEl, card) {
-    var _a, _b;
-    const maxTags = (_b = (_a = this.plugin.settings) == null ? void 0 : _a.maxTagsShown) != null ? _b : 5;
-    const tags = card.tags || [];
-    if (tags.length === 0)
-      return;
-    const tagsContainer = cardEl.createEl("div", { cls: "kanban-card-tags" });
-    const displayTags = tags.slice(0, maxTags);
-    for (const tag of displayTags) {
-      const tagEl = tagsContainer.createEl("span", {
-        cls: "kanban-card-tag",
-        text: tag
-      });
-    }
-    if (tags.length > maxTags) {
-      tagsContainer.createEl("span", {
-        cls: "kanban-card-tag kanban-card-tag-more",
-        text: `+${tags.length - maxTags}`
-      });
-    }
-  }
-  /**
-   * Get the appropriate icon for a bookmark card
-   */
-  getCardIcon(card) {
-    var _a;
-    switch (card.type) {
-      case "file":
-        if (((_a = card.file) == null ? void 0 : _a.extension) === "md") {
-          return Icons.markdown;
-        }
-        return Icons.attachment;
-      case "folder":
-        return Icons.folder;
-      case "group":
-        return BookmarkIcons.group;
-      case "search":
-        return BookmarkIcons.search;
-      case "graph":
-        return BookmarkIcons.graph;
-      default:
-        return BookmarkIcons.bookmark;
-    }
-  }
-  /**
-   * Show context menu for a bookmark card
-   */
-  showContextMenu(event, card) {
-    const menu = new import_obsidian13.Menu();
-    if (card.type === "file" && card.file) {
-      menu.addItem((item) => {
-        item.setTitle("Open in new tab").setIcon("file-plus").onClick(async () => {
-          await this.app.workspace.getLeaf("tab").openFile(card.file);
-        });
-      });
-      menu.addItem((item) => {
-        item.setTitle("Open in new pane").setIcon("separator-vertical").onClick(async () => {
-          await this.app.workspace.getLeaf("split", "vertical").openFile(card.file);
-        });
-      });
-      menu.addSeparator();
-    }
-    if (card.type === "folder" && card.folder) {
-      menu.addItem((item) => {
-        item.setTitle("Reveal in navigation").setIcon("folder").onClick(() => {
-          var _a, _b;
-          (_b = (_a = this.app.internalPlugins.getPluginById("file-explorer")) == null ? void 0 : _a.instance) == null ? void 0 : _b.revealInFolder(card.folder);
-        });
-      });
-      menu.addSeparator();
-    }
-    if (card.type === "search" && card.query) {
-      menu.addItem((item) => {
-        item.setTitle("Execute search").setIcon("search").onClick(() => {
-          var _a, _b;
-          (_b = (_a = this.app.internalPlugins.getPluginById("global-search")) == null ? void 0 : _a.instance) == null ? void 0 : _b.openGlobalSearch(card.query);
-        });
-      });
-      menu.addSeparator();
-    }
-    if (card.type === "graph") {
-      menu.addItem((item) => {
-        item.setTitle("Open graph view").setIcon("git-fork").onClick(async () => {
-          await this.app.commands.executeCommandById("graph:open");
-        });
-      });
-      menu.addSeparator();
-    }
-    if (card.path) {
-      menu.addItem((item) => {
-        item.setTitle("Copy path").setIcon("copy").onClick(() => {
-          navigator.clipboard.writeText(card.path);
-          new import_obsidian13.Notice("Path copied to clipboard");
-        });
-      });
-    }
-    menu.addItem((item) => {
-      item.setTitle("Remove bookmark").setIcon("trash").onClick(async () => {
-        await this.callbacks.onRemoveBookmark(card);
-      });
-    });
-    menu.showAtMouseEvent(event);
-  }
-};
-var BookmarkIcons = {
-  bookmark: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`,
-  bookmarkFilled: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`,
-  group: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>`,
-  search: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`,
-  graph: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><line x1="6" y1="9" x2="6" y2="15"></line><line x1="18" y1="9" x2="18" y2="15"></line><line x1="9" y1="6" x2="15" y2="6"></line></svg>`,
-  star: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`
-};
-
-// src/bookmarks/BookmarkKanbanView.ts
-var VIEW_TYPE_BOOKMARK_KANBAN = "bookmark-kanban-view";
-var BookmarkKanbanView = class extends import_obsidian14.ItemView {
-  constructor(leaf, plugin) {
-    super(leaf);
-    this.plugin = plugin;
-    this.state = {
-      searchQuery: "",
-      sortBy: "name",
-      sortDirection: "asc",
-      currentGroup: null,
-      history: []
-    };
-    this.keyHandler = this.handleKeydown.bind(this);
-    this.bookmarkBuilder = new BookmarkBuilder(this.app);
-    this.bookmarkRenderer = new BookmarkRenderer(this.app, plugin, {
-      onCardClick: async (card) => this.handleCardClick(card),
-      onGroupClick: async (groupTitle) => this.navigateToGroup(groupTitle),
-      onRemoveBookmark: async (card) => this.removeBookmark(card),
-      onRender: async () => this.render()
-    });
-  }
-  getViewType() {
-    return VIEW_TYPE_BOOKMARK_KANBAN;
-  }
-  getDisplayText() {
-    if (this.state.currentGroup) {
-      return `Bookmarks: ${this.state.currentGroup}`;
-    }
-    return "Bookmarks Kanban";
-  }
-  getIcon() {
-    return "bookmark";
-  }
-  async onOpen() {
-    var _a;
-    this.contentEl = this.containerEl.children[1];
-    this.contentEl.empty();
-    this.contentEl.addClass("kanban-4000-container", "bookmark-kanban-container");
-    if ((_a = this.plugin.settings) == null ? void 0 : _a.enableAnimations) {
-      this.contentEl.addClass("kanban-animations-enabled");
-    }
-    this.containerEl.addEventListener("keydown", this.keyHandler);
-    await this.render();
-  }
-  async onClose() {
-    this.containerEl.removeEventListener("keydown", this.keyHandler);
-  }
-  /**
-   * Handle keyboard shortcuts
-   */
-  handleKeydown(e) {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-      if (e.key === "Escape") {
-        e.target.blur();
-        e.preventDefault();
-      }
-      return;
-    }
-    switch (e.key) {
-      case "Backspace":
-      case "ArrowLeft":
-        if (this.state.currentGroup) {
-          this.navigateBack();
-          e.preventDefault();
-        }
-        break;
-      case "Escape":
-        if (this.state.searchQuery) {
-          this.state.searchQuery = "";
-          this.render();
-          e.preventDefault();
-        }
-        break;
-      case "/":
-        const searchInput = this.contentEl.querySelector(".bookmark-search-input");
-        if (searchInput) {
-          searchInput.focus();
-          e.preventDefault();
-        }
-        break;
-      case "r":
-      case "R":
-        this.render();
-        e.preventDefault();
-        break;
-      case "Home":
-        if (this.state.currentGroup) {
-          this.state.currentGroup = null;
-          this.state.history = [];
-          this.render();
-          e.preventDefault();
-        }
-        break;
-    }
-  }
-  /**
-   * Navigate to a bookmark group
-   */
-  async navigateToGroup(groupTitle) {
-    if (this.state.currentGroup) {
-      this.state.history.push(this.state.currentGroup);
-    }
-    this.state.currentGroup = this.state.currentGroup ? `${this.state.currentGroup}/${groupTitle}` : groupTitle;
-    await this.render();
-  }
-  /**
-   * Navigate back to parent group
-   */
-  async navigateBack() {
-    if (this.state.history.length > 0) {
-      this.state.currentGroup = this.state.history.pop() || null;
-    } else {
-      this.state.currentGroup = null;
-    }
-    await this.render();
-  }
-  /**
-   * Handle clicking on a bookmark card
-   */
-  async handleCardClick(card) {
-    var _a, _b, _c, _d;
-    switch (card.type) {
-      case "file":
-        if (card.file) {
-          await this.app.workspace.getLeaf().openFile(card.file);
-        }
-        break;
-      case "folder":
-        if (card.folder) {
-          (_b = (_a = this.app.internalPlugins.getPluginById("file-explorer")) == null ? void 0 : _a.instance) == null ? void 0 : _b.revealInFolder(card.folder);
-        }
-        break;
-      case "search":
-        if (card.query) {
-          (_d = (_c = this.app.internalPlugins.getPluginById("global-search")) == null ? void 0 : _c.instance) == null ? void 0 : _d.openGlobalSearch(card.query);
-        }
-        break;
-      case "graph":
-        await this.app.commands.executeCommandById("graph:open");
-        break;
-      case "group":
-        await this.navigateToGroup(card.title);
-        break;
-    }
-  }
-  /**
-   * Remove a bookmark
-   */
-  async removeBookmark(card) {
-    const success = await this.bookmarkBuilder.removeBookmark(card.originalItem);
-    if (success) {
-      new import_obsidian14.Notice(`Removed bookmark: ${card.title}`);
-      await this.render();
-    } else {
-      new import_obsidian14.Notice("Failed to remove bookmark");
-    }
-  }
-  /**
-   * Render the bookmark kanban view
-   */
-  async render() {
-    this.contentEl.empty();
-    if (!this.bookmarkBuilder.isBookmarksEnabled()) {
-      this.renderBookmarksDisabled();
-      return;
-    }
-    this.renderToolbar();
-    const lists = await this.bookmarkBuilder.buildBoard(this.state.currentGroup);
-    const processedLists = this.bookmarkBuilder.processLists(lists, this.state);
-    this.bookmarkRenderer.renderBoard(this.contentEl, processedLists, this.state.searchQuery);
-    if (this.leaf.updateHeader) {
-      this.leaf.updateHeader();
-    }
-  }
-  /**
-   * Render message when bookmarks plugin is disabled
-   */
-  renderBookmarksDisabled() {
-    const messageEl = this.contentEl.createEl("div", { cls: "bookmark-disabled-message" });
-    const iconEl = messageEl.createEl("div", { cls: "bookmark-disabled-icon" });
-    iconEl.innerHTML = BookmarkIcons.bookmark;
-    messageEl.createEl("h3", { text: "Bookmarks Plugin Disabled" });
-    messageEl.createEl("p", {
-      text: "Enable the core Bookmarks plugin in Settings \u2192 Core plugins to use this feature."
-    });
-    const settingsBtn = messageEl.createEl("button", {
-      cls: "bookmark-settings-btn",
-      text: "Open Settings"
-    });
-    settingsBtn.onclick = () => {
-      this.app.setting.open();
-      this.app.setting.openTabById("core-plugins");
-    };
-  }
-  /**
-   * Render the toolbar with search, sort, and navigation
-   */
-  renderToolbar() {
-    const toolbar = this.contentEl.createEl("div", { cls: "kanban-toolbar bookmark-toolbar" });
-    const leftSection = toolbar.createEl("div", { cls: "bookmark-toolbar-left" });
-    if (this.state.currentGroup) {
-      const backBtn = leftSection.createEl("button", {
-        cls: "kanban-back-btn",
-        attr: { "aria-label": "Go back" }
-      });
-      backBtn.innerHTML = Icons.back;
-      backBtn.onclick = () => this.navigateBack();
-    }
-    this.renderBreadcrumbs(leftSection);
-    const centerSection = toolbar.createEl("div", { cls: "bookmark-toolbar-center" });
-    this.renderSearch(centerSection);
-    const rightSection = toolbar.createEl("div", { cls: "bookmark-toolbar-right" });
-    this.renderSortControls(rightSection);
-  }
-  /**
-   * Render breadcrumb navigation
-   */
-  renderBreadcrumbs(container) {
-    const breadcrumbs = container.createEl("div", { cls: "kanban-breadcrumbs bookmark-breadcrumbs" });
-    const rootCrumb = breadcrumbs.createEl("span", {
-      cls: "kanban-breadcrumb bookmark-breadcrumb",
-      text: "Bookmarks"
-    });
-    if (this.state.currentGroup) {
-      rootCrumb.addClass("clickable");
-      rootCrumb.onclick = () => {
-        this.state.currentGroup = null;
-        this.state.history = [];
-        this.render();
-      };
-    }
-    if (this.state.currentGroup) {
-      const parts = this.state.currentGroup.split("/");
-      parts.forEach((part, index) => {
-        breadcrumbs.createEl("span", { cls: "kanban-breadcrumb-separator", text: " / " });
-        const crumb = breadcrumbs.createEl("span", {
-          cls: "kanban-breadcrumb bookmark-breadcrumb",
-          text: part
-        });
-        if (index < parts.length - 1) {
-          crumb.addClass("clickable");
-          crumb.onclick = () => {
-            this.state.currentGroup = parts.slice(0, index + 1).join("/");
-            this.state.history = [];
-            this.render();
-          };
-        }
-      });
-    }
-  }
-  /**
-   * Render search input
-   */
-  renderSearch(container) {
-    const searchWrapper = container.createEl("div", { cls: "kanban-search-wrapper bookmark-search-wrapper" });
-    const searchIcon = searchWrapper.createEl("span", { cls: "kanban-search-icon" });
-    searchIcon.innerHTML = Icons.search;
-    const searchInput = searchWrapper.createEl("input", {
-      cls: "kanban-search-input bookmark-search-input",
-      attr: {
-        type: "text",
-        placeholder: "Search bookmarks...",
-        value: this.state.searchQuery
-      }
-    });
-    searchInput.oninput = async () => {
-      this.state.searchQuery = searchInput.value;
-      await this.render();
-    };
-    if (this.state.searchQuery) {
-      const clearBtn = searchWrapper.createEl("button", {
-        cls: "kanban-search-clear",
-        attr: { "aria-label": "Clear search" }
-      });
-      clearBtn.innerHTML = Icons.close;
-      clearBtn.onclick = async () => {
-        this.state.searchQuery = "";
-        await this.render();
-      };
-    }
-  }
-  /**
-   * Render sort controls
-   */
-  renderSortControls(container) {
-    const sortWrapper = container.createEl("div", { cls: "kanban-sort-wrapper bookmark-sort-wrapper" });
-    const sortSelect = sortWrapper.createEl("select", {
-      cls: "kanban-sort-select bookmark-sort-select"
-    });
-    const sortOptions = [
-      { value: "name", label: "Name" },
-      { value: "created", label: "Bookmark Created" },
-      { value: "type", label: "Type" }
-    ];
-    for (const option of sortOptions) {
-      const optEl = sortSelect.createEl("option", {
-        text: option.label,
-        attr: { value: option.value }
-      });
-      if (option.value === this.state.sortBy) {
-        optEl.selected = true;
-      }
-    }
-    sortSelect.onchange = async () => {
-      this.state.sortBy = sortSelect.value;
-      await this.render();
-    };
-    const directionBtn = sortWrapper.createEl("button", {
-      cls: "kanban-sort-direction bookmark-sort-direction",
-      attr: { "aria-label": `Sort ${this.state.sortDirection === "asc" ? "ascending" : "descending"}` }
-    });
-    directionBtn.innerHTML = this.state.sortDirection === "asc" ? Icons.chevronUp : Icons.chevronDown;
-    directionBtn.onclick = async () => {
-      this.state.sortDirection = this.state.sortDirection === "asc" ? "desc" : "asc";
-      await this.render();
-    };
-    const refreshBtn = sortWrapper.createEl("button", {
-      cls: "bookmark-refresh-btn",
-      attr: { "aria-label": "Refresh bookmarks" }
-    });
-    refreshBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>`;
-    refreshBtn.onclick = () => this.render();
+    return count;
   }
 };
 
 // src/settings.ts
-var import_obsidian15 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 var DEFAULT_SETTINGS = {
   excludePatterns: [".obsidian", "_templates", "templates", ".trash"],
   defaultSortBy: "name",
@@ -3555,9 +4255,12 @@ var DEFAULT_SETTINGS = {
   cardWidth: 280,
   maxTagsShown: 5,
   enableAnimations: true,
-  autoRefresh: true
+  autoRefresh: true,
+  wrapLists: false,
+  savedFilters: [],
+  showUndoNotifications: true
 };
-var Kanban4000SettingTab = class extends import_obsidian15.PluginSettingTab {
+var Kanban4000SettingTab = class extends import_obsidian14.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -3566,51 +4269,60 @@ var Kanban4000SettingTab = class extends import_obsidian15.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Kanban 4000 Settings" });
-    new import_obsidian15.Setting(containerEl).setName("Root folder").setDesc('The folder to use as the root of your Kanban board. Leave as "/" for vault root.').addText((text) => text.setPlaceholder("/").setValue(this.plugin.settings.rootFolder).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Root folder").setDesc('The folder to use as the root of your Kanban board. Leave as "/" for vault root.').addText((text) => text.setPlaceholder("/").setValue(this.plugin.settings.rootFolder).onChange(async (value) => {
       this.plugin.settings.rootFolder = value || "/";
       await this.plugin.saveSettings();
     }));
-    new import_obsidian15.Setting(containerEl).setName("Exclude folders").setDesc("Comma-separated list of folder names to exclude from the board.").addTextArea((text) => text.setPlaceholder(".obsidian, _templates, .trash").setValue(this.plugin.settings.excludePatterns.join(", ")).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Exclude folders").setDesc("Comma-separated list of folder names to exclude from the board.").addTextArea((text) => text.setPlaceholder(".obsidian, _templates, .trash").setValue(this.plugin.settings.excludePatterns.join(", ")).onChange(async (value) => {
       this.plugin.settings.excludePatterns = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h3", { text: "Default Sort" });
-    new import_obsidian15.Setting(containerEl).setName("Sort by").setDesc("Default sorting method for cards.").addDropdown((dropdown) => dropdown.addOption("name", "Name").addOption("modified", "Modified Date").addOption("created", "Created Date").setValue(this.plugin.settings.defaultSortBy).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Sort by").setDesc("Default sorting method for cards.").addDropdown((dropdown) => dropdown.addOption("name", "Name").addOption("modified", "Modified Date").addOption("created", "Created Date").setValue(this.plugin.settings.defaultSortBy).onChange(async (value) => {
       this.plugin.settings.defaultSortBy = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian15.Setting(containerEl).setName("Sort direction").setDesc("Default sort direction.").addDropdown((dropdown) => dropdown.addOption("asc", "Ascending").addOption("desc", "Descending").setValue(this.plugin.settings.defaultSortDirection).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Sort direction").setDesc("Default sort direction.").addDropdown((dropdown) => dropdown.addOption("asc", "Ascending").addOption("desc", "Descending").setValue(this.plugin.settings.defaultSortDirection).onChange(async (value) => {
       this.plugin.settings.defaultSortDirection = value;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h3", { text: "Display Options" });
-    new import_obsidian15.Setting(containerEl).setName("Card width").setDesc("Width of list columns in pixels (200-400).").addSlider((slider) => slider.setLimits(200, 400, 20).setValue(this.plugin.settings.cardWidth).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Grid layout").setDesc("Wrap lists to multiple rows instead of horizontal scrolling. Useful for viewing many folders at once.").addToggle((toggle) => toggle.setValue(this.plugin.settings.wrapLists).onChange(async (value) => {
+      this.plugin.settings.wrapLists = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian14.Setting(containerEl).setName("Card width").setDesc("Width of list columns in pixels (200-400).").addSlider((slider) => slider.setLimits(200, 400, 20).setValue(this.plugin.settings.cardWidth).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.cardWidth = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian15.Setting(containerEl).setName("Show preview text").setDesc("Display the first ~100 characters of markdown files on cards.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showPreviewText).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Show preview text").setDesc("Display the first ~100 characters of markdown files on cards.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showPreviewText).onChange(async (value) => {
       this.plugin.settings.showPreviewText = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian15.Setting(containerEl).setName("Show tags").setDesc("Display tags extracted from file content.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showTags).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Show tags").setDesc("Display tags extracted from file content.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showTags).onChange(async (value) => {
       this.plugin.settings.showTags = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian15.Setting(containerEl).setName("Maximum tags shown").setDesc("Maximum number of tags to display per card.").addSlider((slider) => slider.setLimits(1, 10, 1).setValue(this.plugin.settings.maxTagsShown).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Maximum tags shown").setDesc("Maximum number of tags to display per card.").addSlider((slider) => slider.setLimits(1, 10, 1).setValue(this.plugin.settings.maxTagsShown).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.maxTagsShown = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian15.Setting(containerEl).setName("Show image thumbnails").setDesc("Display thumbnail previews for image files.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showImageThumbnails).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Show image thumbnails").setDesc("Display thumbnail previews for image files.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showImageThumbnails).onChange(async (value) => {
       this.plugin.settings.showImageThumbnails = value;
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h3", { text: "Behavior" });
-    new import_obsidian15.Setting(containerEl).setName("Enable animations").setDesc("Smooth animations when navigating and expanding cards.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAnimations).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Enable animations").setDesc("Smooth animations when navigating and expanding cards.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAnimations).onChange(async (value) => {
       this.plugin.settings.enableAnimations = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian15.Setting(containerEl).setName("Auto refresh").setDesc("Automatically refresh the board when files change.").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoRefresh).onChange(async (value) => {
+    new import_obsidian14.Setting(containerEl).setName("Auto refresh").setDesc("Automatically refresh the board when files change.").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoRefresh).onChange(async (value) => {
       this.plugin.settings.autoRefresh = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian14.Setting(containerEl).setName("Show undo notifications").setDesc("Show a notification with undo button after moving or deleting files.").addToggle((toggle) => toggle.setValue(this.plugin.settings.showUndoNotifications).onChange(async (value) => {
+      this.plugin.settings.showUndoNotifications = value;
+      this.plugin.undoManager.setShowNotifications(value);
       await this.plugin.saveSettings();
     }));
     containerEl.createEl("h3", { text: "Keyboard Shortcuts" });
@@ -3618,12 +4330,17 @@ var Kanban4000SettingTab = class extends import_obsidian15.PluginSettingTab {
     shortcutsDiv.innerHTML = `
 			<p>The following keyboard shortcuts are available when the Kanban view is focused:</p>
 			<ul>
-				<li><kbd>Backspace</kbd> / <kbd>\u2190</kbd> - Go back (zoom out)</li>
-				<li><kbd>Escape</kbd> - Clear search / Close expanded card</li>
+				<li><kbd>\u2191</kbd> / <kbd>\u2193</kbd> - Navigate between cards in a list</li>
+				<li><kbd>\u2190</kbd> / <kbd>\u2192</kbd> - Navigate between lists</li>
+				<li><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd> - Move to next/previous list</li>
+				<li><kbd>Enter</kbd> - Open focused card</li>
+				<li><kbd>Backspace</kbd> - Go back (zoom out)</li>
+				<li><kbd>Escape</kbd> - Clear search / Close expanded card / Clear focus</li>
 				<li><kbd>/</kbd> or <kbd>Ctrl+F</kbd> - Focus search</li>
 				<li><kbd>R</kbd> - Refresh board</li>
 				<li><kbd>Home</kbd> - Go to root</li>
 			</ul>
+			<p><strong>Undo:</strong> Use the command palette to run "Undo last Kanban action" or assign a hotkey in Settings \u2192 Hotkeys.</p>
 		`;
     containerEl.createEl("h3", { text: "Bookmarks Kanban" });
     const bookmarksDiv = containerEl.createEl("div", { cls: "kanban-shortcuts-info" });
@@ -3641,6 +4358,164 @@ var Kanban4000SettingTab = class extends import_obsidian15.PluginSettingTab {
   }
 };
 
+// src/UndoManager.ts
+var import_obsidian15 = require("obsidian");
+var UndoManager = class {
+  constructor(app) {
+    this.app = app;
+    this.stack = [];
+    this.maxStackSize = 20;
+    this.showNotifications = true;
+    this.noticeTimeout = 5e3;
+    this.currentNotice = null;
+  }
+  /**
+   * Enable or disable undo notifications
+   */
+  setShowNotifications(show) {
+    this.showNotifications = show;
+  }
+  /**
+   * Push an undoable action onto the stack
+   */
+  push(action) {
+    this.stack.push(action);
+    if (this.stack.length > this.maxStackSize) {
+      this.stack.shift();
+    }
+    if (this.showNotifications) {
+      this.showUndoNotice(action);
+    }
+  }
+  /**
+   * Undo the last action
+   */
+  async undo() {
+    const action = this.stack.pop();
+    if (!action) {
+      new import_obsidian15.Notice("Nothing to undo");
+      return false;
+    }
+    try {
+      await action.undo();
+      new import_obsidian15.Notice(`Undone: ${action.description}`);
+      return true;
+    } catch (e) {
+      new import_obsidian15.Notice(`Failed to undo: ${e}`);
+      this.stack.push(action);
+      return false;
+    }
+  }
+  /**
+   * Check if there are actions to undo
+   */
+  canUndo() {
+    return this.stack.length > 0;
+  }
+  /**
+   * Get description of last action
+   */
+  getLastActionDescription() {
+    return this.stack.length > 0 ? this.stack[this.stack.length - 1].description : null;
+  }
+  /**
+   * Clear the undo stack
+   */
+  clear() {
+    this.stack = [];
+  }
+  /**
+   * Get the current stack size
+   */
+  getStackSize() {
+    return this.stack.length;
+  }
+  /**
+   * Show notification with undo button
+   */
+  showUndoNotice(action) {
+    if (this.currentNotice) {
+      this.currentNotice.hide();
+    }
+    const fragment = document.createDocumentFragment();
+    fragment.createSpan({ text: action.description + " " });
+    const undoBtn = fragment.createEl("a", {
+      text: "Undo",
+      cls: "kanban-undo-link"
+    });
+    undoBtn.onclick = async (e) => {
+      var _a;
+      e.preventDefault();
+      await this.undo();
+      (_a = this.currentNotice) == null ? void 0 : _a.hide();
+    };
+    this.currentNotice = new import_obsidian15.Notice(fragment, this.noticeTimeout);
+  }
+  /**
+   * Create undo action for file/folder move
+   */
+  createMoveAction(file, oldPath, newPath) {
+    const fileName = file.name;
+    const isFolder = file instanceof import_obsidian15.TFolder;
+    return {
+      type: "move",
+      description: `Moved ${isFolder ? "folder" : "file"} "${fileName}"`,
+      timestamp: Date.now(),
+      undo: async () => {
+        const currentFile = this.app.vault.getAbstractFileByPath(newPath);
+        if (currentFile) {
+          await this.app.fileManager.renameFile(currentFile, oldPath);
+        } else {
+          throw new Error("File not found at new location");
+        }
+      }
+    };
+  }
+  /**
+   * Create undo action for file/folder delete (moved to trash)
+   * Note: Obsidian's trash is in .trash folder
+   */
+  createDeleteAction(file, originalPath) {
+    const fileName = file.name;
+    const isFolder = file instanceof import_obsidian15.TFolder;
+    return {
+      type: "delete",
+      description: `Deleted ${isFolder ? "folder" : "file"} "${fileName}"`,
+      timestamp: Date.now(),
+      undo: async () => {
+        const trashPath = `.trash/${fileName}`;
+        const trashedFile = this.app.vault.getAbstractFileByPath(trashPath);
+        if (trashedFile) {
+          await this.app.fileManager.renameFile(trashedFile, originalPath);
+        } else {
+          throw new Error("File not found in trash - it may have been permanently deleted or renamed");
+        }
+      }
+    };
+  }
+  /**
+   * Create undo action for rename
+   */
+  createRenameAction(file, oldPath, newPath) {
+    const oldName = oldPath.split("/").pop() || oldPath;
+    const newName = file.name;
+    const isFolder = file instanceof import_obsidian15.TFolder;
+    return {
+      type: "rename",
+      description: `Renamed ${isFolder ? "folder" : "file"} "${oldName}" to "${newName}"`,
+      timestamp: Date.now(),
+      undo: async () => {
+        const currentFile = this.app.vault.getAbstractFileByPath(newPath);
+        if (currentFile) {
+          await this.app.fileManager.renameFile(currentFile, oldPath);
+        } else {
+          throw new Error("File not found at new location");
+        }
+      }
+    };
+  }
+};
+
 // src/main.ts
 var Kanban4000Plugin = class extends import_obsidian16.Plugin {
   constructor() {
@@ -3651,34 +4526,22 @@ var Kanban4000Plugin = class extends import_obsidian16.Plugin {
   }
   async onload() {
     await this.loadSettings();
+    this.undoManager = new UndoManager(this.app);
+    this.undoManager.setShowNotifications(this.settings.showUndoNotifications);
     this.registerView(
       VIEW_TYPE_KANBAN,
       (leaf) => new KanbanView(leaf, this)
-    );
-    this.registerView(
-      VIEW_TYPE_BOOKMARK_KANBAN,
-      (leaf) => new BookmarkKanbanView(leaf, this)
     );
     this.tryRegisterWithCore();
     this.addSettingTab(new Kanban4000SettingTab(this.app, this));
     this.addRibbonIcon("layout-dashboard", "Open Kanban 4000", () => {
       this.activateView();
     });
-    this.addRibbonIcon("bookmark", "Open Bookmarks Kanban", () => {
-      this.activateBookmarkView();
-    });
     this.addCommand({
       id: "open-kanban-4000",
       name: "Open Kanban 4000 Board",
       callback: () => {
         this.activateView();
-      }
-    });
-    this.addCommand({
-      id: "open-bookmarks-kanban",
-      name: "Open Bookmarks Kanban",
-      callback: () => {
-        this.activateBookmarkView();
       }
     });
     this.addCommand({
@@ -3700,6 +4563,16 @@ var Kanban4000Plugin = class extends import_obsidian16.Plugin {
       name: "Refresh Kanban Board",
       callback: () => {
         this.refreshAllViews();
+      }
+    });
+    this.addCommand({
+      id: "undo-last-action",
+      name: "Undo last Kanban action",
+      callback: async () => {
+        const success = await this.undoManager.undo();
+        if (success) {
+          this.refreshAllViews();
+        }
       }
     });
     this.registerEvent(
@@ -3755,15 +4628,21 @@ var Kanban4000Plugin = class extends import_obsidian16.Plugin {
     var _a, _b;
     return (_b = (_a = this.kanbanViewPlugin) == null ? void 0 : _a.getCore()) != null ? _b : null;
   }
+  /**
+   * Get the CoreStateSync instance for state synchronization
+   */
+  getStateSync() {
+    var _a, _b;
+    return (_b = (_a = this.kanbanViewPlugin) == null ? void 0 : _a.getStateSync()) != null ? _b : null;
+  }
   async onunload() {
     if (this.coreConnected && window.NavigatorCore && this.kanbanViewPlugin) {
       try {
-        window.NavigatorCore.unregisterViewPlugin("kanban");
+        window.NavigatorCore.unregisterViewPlugin("kanban-4000");
       } catch (e) {
       }
     }
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_KANBAN);
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_BOOKMARK_KANBAN);
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -3793,13 +4672,6 @@ var Kanban4000Plugin = class extends import_obsidian16.Plugin {
         view.render();
       }
     }
-    const bookmarkLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_BOOKMARK_KANBAN);
-    for (const leaf of bookmarkLeaves) {
-      const view = leaf.view;
-      if (view && view.render) {
-        view.render();
-      }
-    }
   }
   async activateView(folderPath) {
     const { workspace } = this.app;
@@ -3816,23 +4688,6 @@ var Kanban4000Plugin = class extends import_obsidian16.Plugin {
         type: VIEW_TYPE_KANBAN,
         active: true,
         state: { folderPath: targetPath }
-      });
-      workspace.revealLeaf(leaf);
-    }
-  }
-  async activateBookmarkView() {
-    const { workspace } = this.app;
-    let leaf = null;
-    const leaves = workspace.getLeavesOfType(VIEW_TYPE_BOOKMARK_KANBAN);
-    if (leaves.length > 0) {
-      leaf = leaves[0];
-    } else {
-      leaf = workspace.getLeaf("tab");
-    }
-    if (leaf) {
-      await leaf.setViewState({
-        type: VIEW_TYPE_BOOKMARK_KANBAN,
-        active: true
       });
       workspace.revealLeaf(leaf);
     }

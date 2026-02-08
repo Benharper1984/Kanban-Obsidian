@@ -11,10 +11,13 @@ import {
 	BoardState, 
 	SortOption,
 	CardType,
+	DateFilter,
+	DatePreset,
 	getCardType,
 	parseKanbanSyntax,
 	extractTags
-} from './types';
+} from '../types';
+import { BookmarkService } from '../BookmarkService';
 
 // Type for Navigator Core reference
 interface NavigatorCore {
@@ -28,15 +31,32 @@ interface NavigatorCore {
 export class CoreBoardBuilder {
 	private adapter: VaultItemAdapter;
 	private core: NavigatorCore | null = null;
+	private bookmarkService: BookmarkService;
+	private bookmarkedPaths: Set<string> = new Set();
 
 	constructor(
 		private app: App,
 		private excludePatterns: string[]
 	) {
 		this.adapter = new VaultItemAdapter(app);
+		this.bookmarkService = new BookmarkService(app);
 		
 		// Try to get reference to Navigator Core
 		this.tryConnectCore();
+	}
+
+	/**
+	 * Refresh the cache of bookmarked paths
+	 */
+	refreshBookmarkCache(): void {
+		this.bookmarkedPaths = this.bookmarkService.getBookmarkedPaths();
+	}
+
+	/**
+	 * Check if a path is bookmarked
+	 */
+	isBookmarked(path: string): boolean {
+		return this.bookmarkedPaths.has(path);
 	}
 
 	/**
@@ -273,10 +293,141 @@ export class CoreBoardBuilder {
 	}
 
 	/**
+	 * Filter cards to only bookmarked items
+	 */
+	filterByBookmarks(cards: KanbanCard[]): KanbanCard[] {
+		return cards.filter(card => this.isBookmarked(card.path));
+	}
+
+	/**
+	 * Filter cards by tags
+	 */
+	filterByTags(cards: KanbanCard[], tagFilters: string[], mode: 'any' | 'all'): KanbanCard[] {
+		if (!tagFilters || tagFilters.length === 0) {
+			return cards;
+		}
+
+		return cards.filter(card => {
+			if (!card.tags || card.tags.length === 0) {
+				return false;
+			}
+
+			const cardTagsLower = card.tags.map(t => t.toLowerCase());
+			const filterTagsLower = tagFilters.map(t => t.toLowerCase());
+
+			if (mode === 'all') {
+				// Card must have ALL selected tags
+				return filterTagsLower.every(tag => cardTagsLower.includes(tag));
+			} else {
+				// Card must have ANY of the selected tags
+				return filterTagsLower.some(tag => cardTagsLower.includes(tag));
+			}
+		});
+	}
+
+	/**
+	 * Get date range from preset
+	 */
+	private getDateRangeFromPreset(preset: DatePreset): { start: number; end: number } {
+		const now = new Date();
+		const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+		const end = endOfDay.getTime();
+
+		let start: number;
+		switch (preset) {
+			case 'today':
+				start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+				break;
+			case 'yesterday':
+				const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+				start = yesterday.getTime();
+				break;
+			case 'week':
+				const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+				start = weekAgo.getTime();
+				break;
+			case 'month':
+				const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+				start = monthAgo.getTime();
+				break;
+			case 'year':
+				const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+				start = yearAgo.getTime();
+				break;
+			default:
+				start = 0;
+		}
+
+		return { start, end };
+	}
+
+	/**
+	 * Filter cards by date range
+	 */
+	filterByDateRange(cards: KanbanCard[], dateFilter: DateFilter): KanbanCard[] {
+		if (!dateFilter) {
+			return cards;
+		}
+
+		let start: number;
+		let end: number;
+
+		if (dateFilter.preset) {
+			const range = this.getDateRangeFromPreset(dateFilter.preset);
+			start = range.start;
+			end = range.end;
+		} else {
+			start = dateFilter.start || 0;
+			end = dateFilter.end || Date.now();
+		}
+
+		return cards.filter(card => {
+			if (!card.file) {
+				// Folders don't have file stats, include them by default
+				return card.type === 'folder';
+			}
+
+			const timestamp = dateFilter.field === 'created' 
+				? card.file.stat.ctime 
+				: card.file.stat.mtime;
+
+			return timestamp >= start && timestamp <= end;
+		});
+	}
+
+	/**
+	 * Collect all unique tags from a list of cards
+	 */
+	collectAllTags(cards: KanbanCard[]): string[] {
+		const tagSet = new Set<string>();
+		for (const card of cards) {
+			if (card.tags) {
+				for (const tag of card.tags) {
+					tagSet.add(tag);
+				}
+			}
+		}
+		return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
+	}
+
+	/**
 	 * Process cards with filter and sort
 	 */
 	processCards(cards: KanbanCard[], state: BoardState): KanbanCard[] {
-		let processed = this.filterByType(cards, state.typeFilters);
+		let processed = cards;
+		
+		// Apply bookmark filter first if active
+		if (state.showBookmarksOnly) {
+			processed = this.filterByBookmarks(processed);
+		}
+		
+		processed = this.filterByType(processed, state.typeFilters);
+		processed = this.filterByTags(processed, state.tagFilters, state.tagFilterMode);
+		
+		if (state.dateFilter) {
+			processed = this.filterByDateRange(processed, state.dateFilter);
+		}
+		
 		processed = this.filterCards(processed, state.searchQuery);
 		return this.sortCards(processed, state.sortBy, state.sortDirection);
 	}
@@ -285,7 +436,15 @@ export class CoreBoardBuilder {
 	 * Process all lists
 	 */
 	processLists(lists: KanbanList[], state: BoardState): KanbanList[] {
-		const hasActiveFilters = state.searchQuery || (state.typeFilters && state.typeFilters.length > 0);
+		// Refresh bookmark cache before processing if bookmark filter is active
+		if (state.showBookmarksOnly) {
+			this.refreshBookmarkCache();
+		}
+		
+		const hasSearch = !!state.searchQuery?.trim();
+		const hasTypes = state.typeFilters?.length > 0;
+		const hasTags = state.tagFilters?.length > 0;
+		const hasActiveFilters = hasSearch || hasTypes || hasTags || !!state.dateFilter || state.showBookmarksOnly;
 		
 		return lists.map(list => ({
 			...list,
